@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    XrmToolBox plugin (WinForms class library, .NET Framework 4.8).
+
+    XrmToolBox / CRM SDK assemblies are provided by the host at runtime, so
+    their runtime assets are excluded to avoid shipping conflicting copies.
+    PdfSharp is NOT host-provided: it is copied to the output and must be
+    deployed alongside the plugin DLL.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <OutputType>Library</OutputType>
+    <RootNamespace>DataverseErdVisualizer</RootNamespace>
+    <AssemblyName>DataverseErdVisualizer</AssemblyName>
+    <LangVersion>7.3</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Company>Cristian Casas</Company>
+    <Authors>Cristian Casas</Authors>
+    <Product>Dataverse ERD Visualizer</Product>
+    <Version>1.0.6</Version>
+    <Description>Generate interactive Entity Relationship Diagrams from any Dataverse solution: tables, columns, lookups and N:N relationships with crow's-foot notation, exportable to PNG, SVG, PDF, HTML and Mermaid.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The test project lives in a subfolder; keep it out of this assembly. -->
+    <Compile Remove="Tests\**" />
+    <None Remove="Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- MEF (the XrmToolBox plugin discovery mechanism) -->
+    <Reference Include="System.ComponentModel.Composition" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- XrmToolBox extensibility + connection control (host-provided at runtime) -->
+    <PackageReference Include="XrmToolBoxPackage" Version="1.*">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+
+    <!-- IOrganizationService / metadata types (host-provided at runtime) -->
+    <PackageReference Include="Microsoft.CrmSdk.XrmTooling.CoreAssembly" Version="9.1.*">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+
+    <!-- PDF generation. Deployed WITH the plugin (not host-provided). -->
+    <PackageReference Include="PdfSharp" Version="1.50.*" />
+  </ItemGroup>
+
+</Project>
