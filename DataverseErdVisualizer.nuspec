@@ -16,7 +16,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>CasasHern.DataverseErdVisualizer</id>
-    <version>1.0.6</version>
+    <version>1.0.7</version>
     <title>Dataverse ERD Visualizer</title>
     <authors>Cristian Casas</authors>
     <owners>casashern</owners>
