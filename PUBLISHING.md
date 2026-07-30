@@ -12,14 +12,23 @@ strict and its error messages are misleading. Follow this exactly.
 ## 2. Build and pack
 
 ```
-dotnet build DataverseErdVisualizer.csproj -c Release
-nuget pack DataverseErdVisualizer.nuspec -OutputDirectory dist
+powershell -ExecutionPolicy Bypass -File pack.ps1
 ```
 
+The script builds Release, checks version lockstep, packs the nuspec, and
+**fixes the icon content type** inside the package's `[Content_Types].xml` —
+nuget.exe writes `png → application/octet`, which makes nuget.org serve the
+logo as `application/octet-stream` and the XrmToolBox portal reject the
+package with the misleading "**Logo Url is not valid**" (root-caused v1.0.6,
+2026-07-30: the portal fetches nuget.org's hosted icon URL and requires an
+`image/*` content type).
+
+If packing manually instead:
 - Use a **current nuget.exe** (6.x+). The PowerApps CLI copy is too old for `<icon>`.
 - **Never `dotnet pack`** — it regenerates the dependency list from the csproj
   and replaces the required literal `XrmToolBox` dependency id with
   `XrmToolBoxPackage`, which the portal rejects.
+- Apply the png content-type fix by hand (see pack.ps1).
 - The NU5128 (framework group) and missing-readme warnings are expected; the
   proven-good package shape triggers both. Do not "fix" them.
 
