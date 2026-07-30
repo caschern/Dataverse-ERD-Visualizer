@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Pack with a CURRENT nuget.exe:  nuget pack DataverseErdVisualizer.nuspec
+  (never `dotnet pack` — it regenerates the dependency list from the csproj
+  and replaces the required literal `XrmToolBox` dependency id).
+
+  Portal rules learned the hard way on Dataverse Process Mapper:
+  - dependency id must be the literal `XrmToolBox` (not XrmToolBoxPackage)
+  - layout must be lib\net48\Plugins\<dll> with third-party DLLs in a
+    lib\net48\Plugins\DataverseErdVisualizer\ subfolder
+  - <summary> and a non-empty <releaseNotes> are required; NO <license> element
+  - <iconUrl> must be a public, reachable image URL
+  - package version must equal the assembly <Version> in the csproj
+  - the portal validates ALL listed versions: unlist any bad ones on nuget.org
+-->
+<package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
+  <metadata>
+    <id>CasasHern.DataverseErdVisualizer</id>
+    <version>1.0.0</version>
+    <title>Dataverse ERD Visualizer</title>
+    <authors>Cristian Casas</authors>
+    <owners>casashern</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectUrl>https://github.com/caschern/Dataverse-ERD-Visualizer</projectUrl>
+    <iconUrl>https://raw.githubusercontent.com/caschern/Dataverse-ERD-Visualizer/main/images/icon.png</iconUrl>
+    <icon>images\icon.png</icon>
+    <summary>Generate interactive Entity Relationship Diagrams from any Dataverse solution.</summary>
+    <description>XrmToolBox tool that generates interactive Entity Relationship Diagrams from a selected Dataverse solution: tables, columns, lookups and N:N relationships in crow's-foot notation. Hide system noise, drag tables to fine-tune the layout, inspect any table's columns and relationships, and export to PNG, SVG, PDF, an HTML data dictionary or a Mermaid erDiagram.</description>
+    <releaseNotes>Initial release: solution picker, table checklist, column display modes, system-noise filtering, N:N / self-referential / external-table toggles, drag-to-reposition preview, PNG / SVG / PDF / HTML / Mermaid export.</releaseNotes>
+    <copyright>Copyright 2026 Cristian Casas</copyright>
+    <tags>XrmToolBox Dataverse ERD Diagram Metadata PowerPlatform Dynamics365</tags>
+    <dependencies>
+      <dependency id="XrmToolBox" version="1.2025.10.74" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="bin\Release\DataverseErdVisualizer.dll" target="lib\net48\Plugins" />
+    <file src="bin\Release\PdfSharp.dll" target="lib\net48\Plugins\DataverseErdVisualizer" />
+    <file src="bin\Release\PdfSharp.Charting.dll" target="lib\net48\Plugins\DataverseErdVisualizer" />
+    <file src="images\icon.png" target="images" />
+  </files>
+</package>
