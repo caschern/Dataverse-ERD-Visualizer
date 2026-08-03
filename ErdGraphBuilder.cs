@@ -32,6 +32,14 @@ namespace DataverseErdVisualizer
 
         public bool ShowEdgeLabels { get; set; } = true;
 
+        /// <summary>
+        /// Pack tables whose only relationship is to one hub into a compact
+        /// grid beside it, instead of spreading them across a single very wide
+        /// rank. On by default — hub tables otherwise produce ribbon diagrams
+        /// tens of thousands of pixels wide.
+        /// </summary>
+        public bool ClusterSatelliteTables { get; set; } = true;
+
         /// <summary>Cap on attribute rows per box in "All" mode.</summary>
         public int MaxAttributesPerEntity { get; set; } = 40;
 
@@ -74,7 +82,7 @@ namespace DataverseErdVisualizer
         {
             var graph = BuildGraph(model, options);
             ErdNodeSizer.Size(graph, measure);
-            var canvas = ErdLayoutEngine.Layout(graph);
+            var canvas = LeafClusterLayout.Layout(graph, options.ClusterSatelliteTables);
             return new ErdDiagram { Graph = graph, CanvasSize = canvas };
         }
 

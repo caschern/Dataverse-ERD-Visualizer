@@ -325,13 +325,32 @@ namespace DataverseErdVisualizer.Rendering
         private static void QueuePortLabel(IDiagramSurface s, PointF[] path, ErdEdge edge,
             List<PortLabel> portLabels, Color color)
         {
-            var end = path[path.Length - 1];
-            float bendY = path.Length >= 2 ? path[path.Length - 2].Y : end.Y;
+            // Normally the label rides the drop INTO the target box. Cluster
+            // edges running up into a shared hub set LabelAtSource, so the
+            // label rides the satellite's own stub instead — otherwise every
+            // label in the cluster would stack on the hub's single entry point.
+            var stub = edge.LabelAtSource ? path[0] : path[path.Length - 1];
+            var bend = edge.LabelAtSource
+                ? path[Math.Min(1, path.Length - 1)]
+                : path[path.Length - 2];
 
-            // Room along the drop (starting above the crow's foot), allowed to
-            // overshoot the bend; the white backing keeps it readable over the
-            // lane bands it crosses.
-            float available = (end.Y - 15f) - bendY + 40f;
+            float available, y;
+            if (edge.LabelAtSource)
+            {
+                // Text climbs upward from Y, so it must stay between the stub
+                // and the bend or it would run back over its own box.
+                float span = Math.Abs(bend.Y - stub.Y);
+                available = span - 10f;
+                y = stub.Y + span - 4f;
+            }
+            else
+            {
+                // Room along the drop (starting above the crow's foot), allowed
+                // to overshoot the bend; the white backing keeps it readable
+                // over the lane bands it crosses.
+                available = (stub.Y - 15f) - bend.Y + 40f;
+                y = stub.Y - 15f; // clear of the crow's foot glyph
+            }
             if (available < 34f) available = 34f;
             if (available > 175f) available = 175f;
 
@@ -342,8 +361,8 @@ namespace DataverseErdVisualizer.Rendering
             portLabels.Add(new PortLabel
             {
                 Text = text,
-                X = end.X + 3f,
-                Y = end.Y - 15f, // clear of the crow's foot glyph
+                X = stub.X + 3f,
+                Y = y,
                 TextWidth = size.Width,
                 TextHeight = size.Height,
                 Color = color

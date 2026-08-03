@@ -240,6 +240,12 @@ namespace DataverseErdVisualizer
                 return item;
             }
 
+            var cluster = Toggle("Group satellite tables", _options.ClusterSatelliteTables,
+                v => _options.ClusterSatelliteTables = v);
+            cluster.ToolTipText = "Pack tables that relate only to one hub into a compact grid " +
+                                  "beside it, instead of one very wide row.";
+            drop.DropDownItems.Add(new ToolStripSeparator());
+
             Toggle("N:N relationships", _options.IncludeManyToMany, v => _options.IncludeManyToMany = v);
             Toggle("Self-referential loops", _options.IncludeSelfReferential, v => _options.IncludeSelfReferential = v);
             Toggle("Related external tables", _options.IncludeExternalEntities, v => _options.IncludeExternalEntities = v);

@@ -136,6 +136,28 @@ namespace DataverseErdVisualizer.Tests
                 IntersectEntity = "cc_workorder_account"
             });
 
+            // Satellite children of Contact: their only relationship is the
+            // lookup back to Contact, so they should pack into a grid below it.
+            foreach (var name in new[] { "Preference", "Consent", "Alias", "Interest",
+                                         "Skill", "Award", "Referral Source", "Portal Login" })
+            {
+                var logical = "cc_" + name.Replace(" ", "").ToLowerInvariant();
+                var satellite = Entity(logical, name, custom: true);
+                AddLookup(satellite, "cc_contactid", "Contact", "contact");
+                Rel("cc_contact_" + logical, "contact", logical, "cc_contactid", "Contact");
+            }
+
+            // Satellite parents of Work Order: classic lookup/reference tables
+            // referenced by nothing else, so they pack into a grid above it.
+            foreach (var name in new[] { "Work Order Type", "Work Order Status", "Priority",
+                                         "Service Territory", "Trade", "Incident Type" })
+            {
+                var logical = "cc_" + name.Replace(" ", "").ToLowerInvariant();
+                Entity(logical, name, custom: true);
+                AddLookup(workorder, logical + "id", name, logical);
+                Rel("cc_" + logical + "_workorder", logical, "cc_workorder", logical + "id", name);
+            }
+
             // External stub target (pricelevel is referenced but not in the solution).
             model.Entities.Add(new EntityModel
             {
