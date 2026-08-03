@@ -98,6 +98,13 @@ namespace DataverseErdVisualizer.Models
         /// <summary>Absolute X where this edge enters the top of its To box (null = center fallback).</summary>
         public float? ToPortX { get; set; }
 
+        /// <summary>
+        /// Label rides the connector's FIRST segment instead of its last. Set
+        /// for satellite-cluster edges that run upward into their hub, where
+        /// the shared end would pile every label onto the same point.
+        /// </summary>
+        public bool LabelAtSource { get; set; }
+
         // --- assigned by the layout engine's routing pass ---
         public bool IsBack { get; set; }
         public float? LaneY { get; set; }

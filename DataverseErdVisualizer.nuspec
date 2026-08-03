@@ -16,7 +16,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>CasasHern.DataverseErdVisualizer</id>
-    <version>1.0.7</version>
+    <version>1.0.8</version>
     <title>Dataverse ERD Visualizer</title>
     <authors>Cristian Casas</authors>
     <owners>casashern</owners>
@@ -26,7 +26,7 @@
     <icon>images\icon.png</icon>
     <summary>Generate interactive Entity Relationship Diagrams from any Dataverse solution.</summary>
     <description>XrmToolBox tool that generates interactive Entity Relationship Diagrams from a selected Dataverse solution: tables, columns, lookups and N:N relationships in crow's-foot notation. Hide system noise, drag tables to fine-tune the layout, inspect any table's columns and relationships, and export to PNG, SVG, PDF, an HTML data dictionary or a Mermaid erDiagram.</description>
-    <releaseNotes>Initial public release. Solution picker with table checklist, column display modes (keys and lookups / custom only / all / none), system-noise filtering, N:N / self-referential / external-table toggles, per-relationship connector ports with rotated labels, drag-to-reposition preview with zoom and search, table details pane, and PNG / SVG / PDF / HTML data dictionary / Mermaid erDiagram export.</releaseNotes>
+    <releaseNotes>Satellite table clustering: tables whose only relationship is to one hub are packed into a compact grid beside it, so hub-heavy solutions no longer render as diagrams tens of thousands of pixels wide (toggle under Options). Also: per-relationship connector ports with rotated labels, drag-to-reposition that preserves connector routing, and PNG / SVG / PDF / HTML data dictionary / Mermaid erDiagram export.</releaseNotes>
     <copyright>Copyright 2026 Cristian Casas</copyright>
     <tags>XrmToolBox Dataverse ERD Diagram Metadata PowerPlatform Dynamics365</tags>
     <dependencies>
