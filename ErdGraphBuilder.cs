@@ -40,6 +40,15 @@ namespace DataverseErdVisualizer
         /// </summary>
         public bool ClusterSatelliteTables { get; set; } = true;
 
+        /// <summary>
+        /// Draw every parallel relationship from a clustered satellite to its
+        /// hub. Off by default: a satellite with several lookups to the same
+        /// table shows one connector marked "xN", which keeps a large grid
+        /// legible. Either way no relationship is lost — the details pane and
+        /// the exports always list them all.
+        /// </summary>
+        public bool ShowAllSatelliteRelationships { get; set; }
+
         /// <summary>Cap on attribute rows per box in "All" mode.</summary>
         public int MaxAttributesPerEntity { get; set; } = 40;
 
@@ -82,7 +91,8 @@ namespace DataverseErdVisualizer
         {
             var graph = BuildGraph(model, options);
             ErdNodeSizer.Size(graph, measure);
-            var canvas = LeafClusterLayout.Layout(graph, options.ClusterSatelliteTables);
+            var canvas = LeafClusterLayout.Layout(graph, options.ClusterSatelliteTables,
+                options.ShowAllSatelliteRelationships);
             return new ErdDiagram { Graph = graph, CanvasSize = canvas };
         }
 

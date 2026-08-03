@@ -35,6 +35,9 @@ namespace DataverseErdVisualizer.Rendering
 
             foreach (var edge in ordered)
             {
+                // Parallel relationships folded into a sibling's "xN" marker.
+                if (edge.Hidden) continue;
+
                 bool incident = highlight && IsIncident(edge, highlightId);
                 var baseColor = edge.Kind == RelationshipKind.ManyToMany
                     ? ErdStyle.ManyToManyEdgeColor : ErdStyle.EdgeColor;
@@ -308,14 +311,23 @@ namespace DataverseErdVisualizer.Rendering
 
             DrawCardinalityGlyphs(s, path, edge, stroke, width);
 
-            if (!string.IsNullOrEmpty(edge.Label))
+            var text = LabelTextFor(edge);
+            if (!string.IsNullOrEmpty(text))
             {
                 if (edge.IsSelf || edge.IsBack)
-                    QueueLabel(s, path, edge, labels, labelColor);
+                    QueueLabel(s, path, edge, text, labels, labelColor);
                 else
-                    QueuePortLabel(s, path, edge, portLabels, labelColor);
+                    QueuePortLabel(s, path, edge, text, portLabels, labelColor);
             }
         }
+
+        /// <summary>
+        /// A connector standing in for several parallel relationships is marked
+        /// with its count instead of one of the names, which would misrepresent
+        /// the others. The full list stays in the details pane and the exports.
+        /// </summary>
+        private static string LabelTextFor(ErdEdge edge)
+            => edge.CollapsedCount > 1 ? "x" + edge.CollapsedCount : edge.Label;
 
         /// <summary>
         /// Rotated label hugging the right side of the connector's final drop,
@@ -323,7 +335,7 @@ namespace DataverseErdVisualizer.Rendering
         /// the drop's length so it doesn't wander into the rank above.
         /// </summary>
         private static void QueuePortLabel(IDiagramSurface s, PointF[] path, ErdEdge edge,
-            List<PortLabel> portLabels, Color color)
+            string labelText, List<PortLabel> portLabels, Color color)
         {
             // Normally the label rides the drop INTO the target box. Cluster
             // edges running up into a shared hub set LabelAtSource, so the
@@ -354,7 +366,7 @@ namespace DataverseErdVisualizer.Rendering
             if (available < 34f) available = 34f;
             if (available > 175f) available = 175f;
 
-            string text = Fit(s, edge.Label, ErdStyle.EdgeLabelFont, available);
+            string text = Fit(s, labelText, ErdStyle.EdgeLabelFont, available);
             if (text.Length == 0) return;
             var size = s.MeasureString(text, ErdStyle.EdgeLabelFont);
 
@@ -470,7 +482,7 @@ namespace DataverseErdVisualizer.Rendering
         }
 
         private static void QueueLabel(IDiagramSurface s, PointF[] path, ErdEdge edge,
-            List<EdgeLabel> labels, Color labelColor)
+            string labelText, List<EdgeLabel> labels, Color labelColor)
         {
             // Anchor the label to the FIRST horizontal run of the path: those lie
             // in the gaps between rows, which are node-free. Self-loops anchor
@@ -493,14 +505,14 @@ namespace DataverseErdVisualizer.Rendering
                 mid = new PointF(path[1].X + 6f, (path[1].Y + path[2].Y) / 2f);
             }
 
-            var size = s.MeasureString(edge.Label, ErdStyle.EdgeLabelFont);
+            var size = s.MeasureString(labelText, ErdStyle.EdgeLabelFont);
             float lx = mid.X - size.Width / 2f;
             float ly = mid.Y - size.Height / 2f;
             if (edge.IsBack && !edge.IsSelf) lx = mid.X; // left-align beside the rail
 
             labels.Add(new EdgeLabel
             {
-                Text = edge.Label,
+                Text = labelText,
                 Backing = new RectangleF(lx - 3f, ly - 1f, size.Width + 6f, size.Height + 2f),
                 Color = labelColor
             });
