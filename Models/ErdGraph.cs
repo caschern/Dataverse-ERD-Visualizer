@@ -118,6 +118,14 @@ namespace DataverseErdVisualizer.Models
         /// </summary>
         public int CollapsedCount { get; set; }
 
+        /// <summary>
+        /// How far a rotated label may run past this connector's bend, in
+        /// pixels (null = the renderer's default). Bus routes inside a
+        /// satellite grid set it to the free space beyond their rail, so a
+        /// long relationship name cannot reach the next row of boxes.
+        /// </summary>
+        public float? LabelOvershoot { get; set; }
+
         // --- assigned by the layout engine's routing pass ---
         public bool IsBack { get; set; }
         public float? LaneY { get; set; }

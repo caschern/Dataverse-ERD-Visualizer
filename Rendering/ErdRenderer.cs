@@ -346,24 +346,29 @@ namespace DataverseErdVisualizer.Rendering
                 ? path[Math.Min(1, path.Length - 1)]
                 : path[path.Length - 2];
 
+            // Which end the label attaches to (above) and which way the
+            // connector leaves that box are independent: a satellite grid
+            // reverses its bus routes, so the corridor can run either way.
+            // Placement must follow the geometry, not the attachment end.
             float available, y;
-            if (edge.LabelAtSource)
+            float span = Math.Abs(bend.Y - stub.Y);
+            if (bend.Y > stub.Y)
             {
-                // Text climbs upward from Y, so it must stay between the stub
-                // and the bend or it would run back over its own box.
-                float span = Math.Abs(bend.Y - stub.Y);
+                // Corridor runs downward from the box; text climbs upward from
+                // Y, so anchor it at the bend and let it grow back to the box.
                 available = span - 10f;
                 y = stub.Y + span - 4f;
             }
             else
             {
-                // Room along the drop (starting above the crow's foot), allowed
-                // to overshoot the bend; the white backing keeps it readable
-                // over the lane bands it crosses.
-                available = (stub.Y - 15f) - bend.Y + 40f;
-                y = stub.Y - 15f; // clear of the crow's foot glyph
+                // Corridor runs upward: start clear of the crow's foot and
+                // climb, allowed to run a little past the bend.
+                available = (stub.Y - 15f) - bend.Y + (edge.LabelOvershoot ?? 40f);
+                y = stub.Y - 15f;
             }
-            if (available < 34f) available = 34f;
+            // No clamping upward — that would push the label out of its
+            // corridor and into a box, which is exactly what it must not do.
+            if (available < 12f) return;
             if (available > 175f) available = 175f;
 
             string text = Fit(s, labelText, ErdStyle.EdgeLabelFont, available);

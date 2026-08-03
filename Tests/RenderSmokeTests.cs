@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
 using DataverseErdVisualizer;
 using DataverseErdVisualizer.Exporters;
 using DataverseErdVisualizer.Models;
@@ -173,6 +177,14 @@ namespace DataverseErdVisualizer.Tests
                 Rel("cc_" + logical + "_workorder", logical, "cc_workorder", logical + "id", name);
             }
 
+            // A satellite related in BOTH directions: its bus routes get
+            // reversed, which is the case that used to drop labels inside a box.
+            var household = Entity("cc_household", "Household", custom: true);
+            AddLookup(household, "cc_contactid", "Head of Household", "contact");
+            AddLookup(contact, "cc_householdid", "Household", "cc_household");
+            Rel("cc_contact_household", "contact", "cc_household", "cc_contactid", "Head of Household");
+            Rel("cc_household_contact", "cc_household", "contact", "cc_householdid", "Household");
+
             // External stub target (pricelevel is referenced but not in the solution).
             model.Entities.Add(new EntityModel
             {
@@ -182,6 +194,78 @@ namespace DataverseErdVisualizer.Tests
             });
 
             return model;
+        }
+
+        /// <summary>
+        /// Parses the generated SVG and fails if any rotated relationship label
+        /// overlaps a table box. Reading the real output is the only way to
+        /// catch label placement bugs — the geometry is decided by the renderer,
+        /// not the layout, so no model-level assertion would see them.
+        /// </summary>
+        private static void AssertNoLabelSitsInsideABox(string svg)
+        {
+            var rects = Regex.Matches(svg,
+                "<rect x=\"([-0-9.]+)\" y=\"([-0-9.]+)\" width=\"([-0-9.]+)\" height=\"([-0-9.]+)\" rx=\"([-0-9.]+)\"[^>]*?(fill=\"[^\"]*\")[^>]*>");
+
+            var boxes = new List<RectangleF>();
+            var labels = new List<RectangleF>();
+            foreach (Match m in rects)
+            {
+                float F(int g) => float.Parse(m.Groups[g].Value, CultureInfo.InvariantCulture);
+                var r = new RectangleF(F(1), F(2), F(3), F(4));
+                float rx = F(5);
+                bool outlined = m.Value.Contains("stroke=");
+                if (rx >= 5f && m.Groups[6].Value == "fill=\"none\"" && outlined) boxes.Add(r);
+                else if (rx == 2f && m.Groups[6].Value == "fill=\"#FFFFFF\"") labels.Add(r);
+            }
+
+            Assert.NotEmpty(boxes);
+            Assert.NotEmpty(labels);
+
+            var offenders = new List<string>();
+            foreach (var label in labels)
+                foreach (var box in boxes)
+                    if (label.IntersectsWith(box))
+                    {
+                        offenders.Add(
+                            $"label({label.X:0},{label.Y:0}..{label.Bottom:0}) in box({box.Y:0}..{box.Bottom:0})");
+                        break;
+                    }
+
+            Assert.True(offenders.Count == 0,
+                $"{offenders.Count} of {labels.Count} labels overlap a table box: " +
+                string.Join("; ", offenders.Take(5)));
+        }
+
+        /// <summary>
+        /// Every relationship drawn separately — the mode that exposes the
+        /// reversed bus routes of satellites related in both directions, whose
+        /// labels once landed inside their own box.
+        /// </summary>
+        [Fact]
+        public void Labels_stay_out_of_boxes_when_every_satellite_edge_is_drawn()
+        {
+            var model = SampleModel();
+            ErdDiagram diagram;
+            using (var bmp = new Bitmap(1, 1))
+            using (var g = Graphics.FromImage(bmp))
+            using (var measure = new GdiDiagramSurface(g))
+            {
+                diagram = ErdGraphBuilder.Build(model,
+                    new ErdOptions { ShowAllSatelliteRelationships = true }, measure);
+            }
+
+            // The both-directions satellite must really be in a grid, or this
+            // test would pass without exercising anything.
+            var household = diagram.Graph.Nodes.Single(n => n.Id == "cc_household");
+            var edges = diagram.Graph.Edges.Where(e =>
+                e.FromId == household.Id || e.ToId == household.Id).ToList();
+            Assert.Equal(2, edges.Count);
+            Assert.All(edges, e => Assert.False(e.Hidden));
+            Assert.Contains(edges, e => e.LabelAtSource);
+            Assert.Contains(edges, e => !e.LabelAtSource);
+
+            AssertNoLabelSitsInsideABox(SvgExporter.Generate(diagram));
         }
 
         [Fact]
@@ -212,6 +296,8 @@ namespace DataverseErdVisualizer.Tests
             var mermaid = MermaidExporter.Generate(diagram);
             Assert.Contains("erDiagram", mermaid);
             Assert.Contains("||--o{", mermaid);
+
+            AssertNoLabelSitsInsideABox(svg);
 
             // Optional artifacts for human eyeballing.
             var dir = Environment.GetEnvironmentVariable("ERD_SMOKE_DIR");

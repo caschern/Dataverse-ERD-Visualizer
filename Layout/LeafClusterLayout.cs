@@ -48,6 +48,7 @@ namespace DataverseErdVisualizer.Layout
             {
                 e.Hidden = false;
                 e.CollapsedCount = 0;
+                e.LabelOvershoot = null;
             }
 
             if (!clusterSatellites) return ErdLayoutEngine.Layout(graph);
@@ -297,6 +298,10 @@ namespace DataverseErdVisualizer.Layout
                     e.ToPortX = null;
                     e.Hidden = !drawn.Contains(e);
                     e.CollapsedCount = 0;
+                    // Beyond a row's rail there is only the rest of the row
+                    // gap; a label may use that much and no more, or it would
+                    // reach the boxes of the neighbouring row.
+                    e.LabelOvershoot = RowGap - RailInset - 4f;
                 }
 
                 if (!showAllEdges && member.Edges.Count > 1)
