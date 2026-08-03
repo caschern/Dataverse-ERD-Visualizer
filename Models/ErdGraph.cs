@@ -100,10 +100,23 @@ namespace DataverseErdVisualizer.Models
 
         /// <summary>
         /// Label rides the connector's FIRST segment instead of its last. Set
-        /// for satellite-cluster edges that run upward into their hub, where
-        /// the shared end would pile every label onto the same point.
+        /// for satellite-cluster edges whose polyline starts at the satellite,
+        /// where the shared hub end would pile every label onto one point.
         /// </summary>
         public bool LabelAtSource { get; set; }
+
+        /// <summary>
+        /// Not drawn on the diagram — a parallel relationship folded into a
+        /// sibling connector's "xN" marker. Still listed in the details pane
+        /// and in every export, so no relationship is ever lost.
+        /// </summary>
+        public bool Hidden { get; set; }
+
+        /// <summary>
+        /// When &gt; 1, this connector stands in for that many parallel
+        /// relationships between the same pair and is marked "xN".
+        /// </summary>
+        public int CollapsedCount { get; set; }
 
         // --- assigned by the layout engine's routing pass ---
         public bool IsBack { get; set; }

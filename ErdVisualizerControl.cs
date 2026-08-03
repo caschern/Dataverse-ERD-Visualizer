@@ -244,6 +244,13 @@ namespace DataverseErdVisualizer
                 v => _options.ClusterSatelliteTables = v);
             cluster.ToolTipText = "Pack tables that relate only to one hub into a compact grid " +
                                   "beside it, instead of one very wide row.";
+
+            var allSatelliteEdges = Toggle("   …show every satellite relationship",
+                _options.ShowAllSatelliteRelationships,
+                v => _options.ShowAllSatelliteRelationships = v);
+            allSatelliteEdges.ToolTipText =
+                "A satellite with several lookups to the same hub shows one connector marked " +
+                "\"x3\" by default. Tick this to draw each relationship separately.";
             drop.DropDownItems.Add(new ToolStripSeparator());
 
             Toggle("N:N relationships", _options.IncludeManyToMany, v => _options.IncludeManyToMany = v);

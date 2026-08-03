@@ -147,6 +147,21 @@ namespace DataverseErdVisualizer.Tests
                 Rel("cc_contact_" + logical, "contact", logical, "cc_contactid", "Contact");
             }
 
+            // Satellites carrying SEVERAL lookups to the same hub: still
+            // satellites (one distinct neighbour), shown as one "xN" connector.
+            foreach (var name in new[] { "Case Note", "Case Task", "Case Event",
+                                         "Case Filing", "Case Motion" })
+            {
+                var logical = "cc_" + name.Replace(" ", "").ToLowerInvariant();
+                var satellite = Entity(logical, name, custom: true);
+                AddLookup(satellite, "cc_authorid", "Author", "contact");
+                AddLookup(satellite, "cc_reviewerid", "Reviewer", "contact");
+                AddLookup(satellite, "cc_filedbyid", "Filed By", "contact");
+                Rel("cc_author_" + logical, "contact", logical, "cc_authorid", "Author");
+                Rel("cc_reviewer_" + logical, "contact", logical, "cc_reviewerid", "Reviewer");
+                Rel("cc_filedby_" + logical, "contact", logical, "cc_filedbyid", "Filed By");
+            }
+
             // Satellite parents of Work Order: classic lookup/reference tables
             // referenced by nothing else, so they pack into a grid above it.
             foreach (var name in new[] { "Work Order Type", "Work Order Status", "Priority",

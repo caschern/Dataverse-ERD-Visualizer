@@ -163,6 +163,93 @@ namespace DataverseErdVisualizer.Tests
             Assert.All(down.Edges, e => Assert.False(e.LabelAtSource));
         }
 
+        /// <summary>A hub whose satellites each carry several lookups back to it.</summary>
+        private static ErdGraph ParallelLookupGraph(int satellites, int lookupsEach)
+        {
+            var g = new ErdGraph();
+            ErdNode Node(string id)
+            {
+                var n = new ErdNode { Id = id, Title = id, Subtitle = id };
+                n.Rows.Add(new ErdRow { Name = id + "id", Badge = RowBadge.PrimaryKey });
+                return g.AddNode(n);
+            }
+            Node("hub");
+            for (int i = 0; i < satellites; i++)
+            {
+                var id = "sat" + i.ToString("D2");
+                Node(id);
+                for (int k = 0; k < lookupsEach; k++)
+                    g.AddEdge(new ErdEdge { FromId = "hub", ToId = id, Label = "lookup" + k });
+            }
+            ErdNodeSizer.Size(g, new FakeSurface());
+            return g;
+        }
+
+        [Fact]
+        public void Parallel_lookups_to_one_hub_still_count_as_satellites()
+        {
+            // Every relationship points at the same table, so horizontal
+            // position carries no information — these belong in the grid.
+            var g = ParallelLookupGraph(10, lookupsEach: 3);
+            Assert.Equal(10, LeafClusterLayout.CountClusteredTables(g));
+
+            var wide = LeafClusterLayout.Layout(g, clusterSatellites: false);
+            var packed = LeafClusterLayout.Layout(g, clusterSatellites: true);
+            Assert.True(packed.Width < wide.Width / 2f);
+        }
+
+        [Fact]
+        public void Parallel_relationships_collapse_to_one_marked_connector_by_default()
+        {
+            var g = ParallelLookupGraph(8, lookupsEach: 3);
+            LeafClusterLayout.Layout(g, clusterSatellites: true);
+
+            foreach (var satellite in g.Nodes.Where(n => n.Id.StartsWith("sat")))
+            {
+                var edges = g.Edges.Where(e =>
+                    string.Equals(e.ToId, satellite.Id, StringComparison.OrdinalIgnoreCase)).ToList();
+                Assert.Equal(3, edges.Count);
+
+                var visible = edges.Where(e => !e.Hidden).ToList();
+                Assert.Single(visible);
+                Assert.Equal(3, visible[0].CollapsedCount);
+                // The folded ones are still in the graph for the details pane
+                // and the exports — nothing is lost, only undrawn.
+                Assert.Equal(2, edges.Count(e => e.Hidden));
+            }
+        }
+
+        [Fact]
+        public void Showing_every_satellite_relationship_fans_them_onto_separate_stubs()
+        {
+            var g = ParallelLookupGraph(8, lookupsEach: 3);
+            LeafClusterLayout.Layout(g, clusterSatellites: true, showAllSatelliteEdges: true);
+
+            foreach (var satellite in g.Nodes.Where(n => n.Id.StartsWith("sat")))
+            {
+                var edges = g.Edges.Where(e =>
+                    string.Equals(e.ToId, satellite.Id, StringComparison.OrdinalIgnoreCase)).ToList();
+
+                Assert.All(edges, e => Assert.False(e.Hidden));
+                Assert.All(edges, e => Assert.Equal(0, e.CollapsedCount));
+
+                // Each connector meets the box at its own point, inside it.
+                var landings = edges.Select(e => (float)Math.Round(e.Route.Last().X, 2)).ToList();
+                Assert.Equal(edges.Count, landings.Distinct().Count());
+                Assert.All(landings, x =>
+                    Assert.InRange(x, satellite.Bounds.X, satellite.Bounds.Right));
+            }
+        }
+
+        [Fact]
+        public void Tables_with_two_different_neighbours_are_not_clustered()
+        {
+            // One lookup to the hub and one elsewhere: its position carries
+            // real information, so it stays in the normal layout.
+            var g = HubGraph(8, true, ("sat01", "other"), ("other", "elsewhere"));
+            Assert.Equal(7, LeafClusterLayout.CountClusteredTables(g));
+        }
+
         [Fact]
         public void Tables_with_other_relationships_are_not_clustered()
         {
