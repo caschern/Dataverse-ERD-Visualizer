@@ -285,14 +285,32 @@ namespace DataverseErdVisualizer
             Add("Mermaid erDiagram…", "Mermaid/Markdown (*.mmd)|*.mmd|Text file (*.txt)|*.txt", ".mmd", MermaidExporter.Save);
             drop.DropDownItems.Add(new ToolStripSeparator());
 
-            var kb = new ToolStripMenuItem("Knowledge base for AI agents (Markdown)…")
+            // The agent-facing formats live in their own submenu: they answer a
+            // different question from the picture formats above.
+            var kb = new ToolStripMenuItem("Knowledge base for AI agents")
             {
-                ToolTipText = "A retrieval-shaped data dictionary for grounding a Copilot Studio " +
-                              "agent: one section per table, relationships written out from both " +
-                              "sides, no diagram embedded."
+                ToolTipText = "Retrieval-shaped documentation for grounding a Copilot Studio " +
+                              "agent: relationships written out from both sides, full column " +
+                              "list, no diagram embedded."
             };
-            kb.Click += (s, e) => Export("Markdown (*.md)|*.md|Text file (*.txt)|*.txt", ".md",
+
+            var perTable = new ToolStripMenuItem("One file per table (folder)…")
+            {
+                ToolTipText = "Highest confidence: citations name the table, and a retrieved " +
+                              "passage can never straddle two tables."
+            };
+            perTable.Click += (s, e) => ExportKnowledgeBaseFolder();
+
+            var single = new ToolStripMenuItem("Single Markdown file…")
+            {
+                ToolTipText = "One document covering every table. Simpler to upload; " +
+                              "citations name only the file."
+            };
+            single.Click += (s, e) => Export("Markdown (*.md)|*.md|Text file (*.txt)|*.txt", ".md",
                 MarkdownExporter.Save);
+
+            kb.DropDownItems.Add(perTable);
+            kb.DropDownItems.Add(single);
             drop.DropDownItems.Add(kb);
             return drop;
         }
@@ -628,6 +646,58 @@ namespace DataverseErdVisualizer
                 {
                     Cursor = Cursors.Default;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Writes the knowledge base as one Markdown file per table, plus an
+        /// overview file, into a folder the user picks.
+        /// </summary>
+        private void ExportKnowledgeBaseFolder()
+        {
+            var diagram = _panel.Diagram;
+            if (diagram == null || diagram.Graph.Nodes.Count == 0)
+            {
+                MessageBox.Show(this, "Generate a diagram first.", "Nothing to export",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            int tables = diagram.Graph.Nodes.Count(n => n.Entity != null && !n.Entity.IsExternal);
+
+            string folder;
+            using (var dlg = new FolderBrowserDialog
+            {
+                Description = $"Choose a folder for the knowledge base ({tables} table files plus an overview)"
+            })
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                folder = dlg.SelectedPath;
+            }
+
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+                var result = MarkdownExporter.SavePerTable(diagram, folder);
+
+                var message = $"Wrote {result.FileCount} files.\n\n" +
+                              "Upload the whole folder as a Copilot Studio knowledge source, or " +
+                              "sync it to a SharePoint library and point the agent there.\n\n" +
+                              "Open the folder now?";
+                if (MessageBox.Show(this, message, "Knowledge base exported",
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+                {
+                    System.Diagnostics.Process.Start("explorer.exe", "\"" + folder + "\"");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Export failed:\n\n" + ex.Message, "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
             }
         }
 

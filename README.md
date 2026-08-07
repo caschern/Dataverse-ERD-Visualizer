@@ -29,21 +29,31 @@ and built on the same custom diagram engine (GDI+/SVG/PDF surfaces + Sugiyama la
 
 ### Knowledge base export (Copilot Studio and similar)
 
-`Export → Knowledge base for AI agents (Markdown)` writes a data dictionary shaped for
-retrieval rather than for reading:
+`Export → Knowledge base for AI agents` writes documentation shaped for retrieval rather
+than for reading, in two forms:
 
-- one `##` section per table, so chunkers split on table boundaries;
-- every section names its table in full instead of saying "it", because a chunk is
-  retrieved without the sections around it;
+| | **One file per table** (recommended) | **Single Markdown file** |
+|---|---|---|
+| Citations | name the table | name only the document |
+| Chunk bleed | impossible — file boundaries are hard | a passage can straddle two tables |
+| Upload | a folder of N files | one file |
+
+Both share the same content rules:
+
+- each table documented on its own, naming itself in full rather than saying "it",
+  because a chunk is retrieved without the sections around it;
 - relationships written as sentences from **both** sides — a lookup listed only on the
   child would never surface when asking what references the parent;
-- the full column list (display name, logical name, type, required level, lookup
-  targets) regardless of the diagram's column display mode;
-- an overview section naming the model's hub tables;
+- columns as self-describing bullets, not a table: a chunk boundary inside a Markdown
+  table strands rows from their header and the model has to guess what each cell meant;
+- the full column list regardless of the diagram's column display mode;
+- an overview naming the model's hub tables, for orientation questions;
 - no diagram embedded — image geometry would swamp every chunk.
 
 Save as `.md`, or as `.txt` if your agent platform does not accept Markdown; the content
-is identical and the headings still chunk correctly.
+is identical and the headings still chunk correctly. The per-table folder can also be
+synced to a SharePoint library and indexed from there, which gives you versioning and
+access control.
 
 ## Install (local)
 

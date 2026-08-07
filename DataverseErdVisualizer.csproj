@@ -22,7 +22,7 @@
     <Company>Cristian Casas</Company>
     <Authors>Cristian Casas</Authors>
     <Product>Dataverse ERD Visualizer</Product>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Description>Generate interactive Entity Relationship Diagrams from any Dataverse solution: tables, columns, lookups and N:N relationships with crow's-foot notation, exportable to PNG, SVG, PDF, HTML and Mermaid.</Description>
   </PropertyGroup>
 

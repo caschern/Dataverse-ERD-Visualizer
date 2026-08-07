@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using DataverseErdVisualizer;
 using DataverseErdVisualizer.Exporters;
@@ -130,7 +131,59 @@ namespace DataverseErdVisualizer.Tests
             Assert.Contains("`cc_judgeid`", md);
             Assert.Contains("Optional", md);
             Assert.Contains("System required", md);
-            Assert.Contains("| Column | Logical name | Type | Required | Lookup target |", md);
+        }
+
+        [Fact]
+        public void Columns_are_self_describing_bullets_not_a_table()
+        {
+            var md = MarkdownExporter.Generate(Build());
+
+            // A chunk boundary inside a Markdown table strands rows from their
+            // header; every bullet has to survive being split out on its own.
+            Assert.DoesNotContain("| --- |", md);
+            Assert.Contains("- **Assigned Judge** (`cc_judgeid`) — Lookup to `contact`. Optional.", md);
+            Assert.Contains("Primary key of Case.", md);
+        }
+
+        [Fact]
+        public void Per_table_export_writes_one_file_each_plus_an_overview()
+        {
+            var folder = Path.Combine(Path.GetTempPath(), "erd-kb-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(folder);
+            try
+            {
+                var result = MarkdownExporter.SavePerTable(Build(), folder);
+
+                var files = Directory.GetFiles(folder, "*.md").Select(Path.GetFileName).ToList();
+                Assert.Equal(3, result.FileCount);          // 2 tables + overview
+                Assert.Contains("00-model-overview.md", files);
+                Assert.Contains("contact.md", files);
+                Assert.Contains("cc_case.md", files);
+
+                var caseFile = File.ReadAllText(Path.Combine(folder, "cc_case.md"));
+
+                // Standalone file: top-level heading, and it must carry its own
+                // provenance and identity because nothing else travels with it.
+                Assert.StartsWith("# Case (`cc_case`)", caseFile);
+                Assert.Contains("Case Management", caseFile);
+                Assert.Contains("**Case** is a custom table", caseFile);
+                Assert.Contains("## Columns of Case", caseFile);
+                Assert.Contains("## Relationships of Case", caseFile);
+
+                // The relationship appears in BOTH files, phrased from each side.
+                var contactFile = File.ReadAllText(Path.Combine(folder, "contact.md"));
+                Assert.Contains("**Case** references **Contact**", caseFile);
+                Assert.Contains("**Contact** is referenced by **Case**", contactFile);
+
+                var overview = File.ReadAllText(Path.Combine(folder, "00-model-overview.md"));
+                Assert.Contains("Model overview", overview);
+                Assert.Contains("own file in this folder", overview);
+                Assert.Contains("Tables documented: 2", overview);
+            }
+            finally
+            {
+                Directory.Delete(folder, recursive: true);
+            }
         }
 
         [Fact]
@@ -140,7 +193,7 @@ namespace DataverseErdVisualizer.Tests
 
             Assert.Contains("## Model overview", md);
             Assert.Contains("Tables documented: 2", md);
-            Assert.Contains("All tables covered by this document:", md);
+            Assert.Contains("All tables covered:", md);
         }
 
         [Fact]
