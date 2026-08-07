@@ -283,6 +283,17 @@ namespace DataverseErdVisualizer
             Add("PDF document…", "PDF document (*.pdf)|*.pdf", ".pdf", PdfExporter.Save);
             Add("HTML data dictionary…", "HTML document (*.html)|*.html", ".html", HtmlExporter.Save);
             Add("Mermaid erDiagram…", "Mermaid/Markdown (*.mmd)|*.mmd|Text file (*.txt)|*.txt", ".mmd", MermaidExporter.Save);
+            drop.DropDownItems.Add(new ToolStripSeparator());
+
+            var kb = new ToolStripMenuItem("Knowledge base for AI agents (Markdown)…")
+            {
+                ToolTipText = "A retrieval-shaped data dictionary for grounding a Copilot Studio " +
+                              "agent: one section per table, relationships written out from both " +
+                              "sides, no diagram embedded."
+            };
+            kb.Click += (s, e) => Export("Markdown (*.md)|*.md|Text file (*.txt)|*.txt", ".md",
+                MarkdownExporter.Save);
+            drop.DropDownItems.Add(kb);
             return drop;
         }
 
@@ -592,7 +603,8 @@ namespace DataverseErdVisualizer
             using (var dialog = new SaveFileDialog())
             {
                 dialog.Filter = filter;
-                dialog.FileName = MakeSafeFileName((diagram.Graph.Title ?? "erd") + "-erd") + extension;
+                var suffix = extension == ".md" ? "-data-model" : "-erd";
+                dialog.FileName = MakeSafeFileName((diagram.Graph.Title ?? "erd") + suffix) + extension;
 
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
 

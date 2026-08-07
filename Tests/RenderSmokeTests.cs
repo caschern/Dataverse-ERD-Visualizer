@@ -307,6 +307,7 @@ namespace DataverseErdVisualizer.Tests
                 SvgExporter.Save(diagram, Path.Combine(dir, "smoke.svg"));
                 HtmlExporter.Save(diagram, Path.Combine(dir, "smoke.html"));
                 MermaidExporter.Save(diagram, Path.Combine(dir, "smoke.mmd"));
+                MarkdownExporter.Save(diagram, Path.Combine(dir, "smoke-data-model.md"));
             }
         }
     }
