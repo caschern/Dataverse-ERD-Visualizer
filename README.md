@@ -24,7 +24,26 @@ and built on the same custom diagram engine (GDI+/SVG/PDF surfaces + Sugiyama la
 - **Interactive preview** — zoom (Ctrl+wheel), pan, click a table for a full details
   pane (all columns + relationships), drag boxes to reposition, find-by-name.
 - **Exports** — PNG, SVG (Visio/draw.io/Figma-editable), vector PDF, a self-contained
-  HTML data dictionary, and a Mermaid `erDiagram` for wikis and markdown.
+  HTML data dictionary, a Mermaid `erDiagram` for wikis and markdown, and a
+  **Markdown knowledge base for AI agents**.
+
+### Knowledge base export (Copilot Studio and similar)
+
+`Export → Knowledge base for AI agents (Markdown)` writes a data dictionary shaped for
+retrieval rather than for reading:
+
+- one `##` section per table, so chunkers split on table boundaries;
+- every section names its table in full instead of saying "it", because a chunk is
+  retrieved without the sections around it;
+- relationships written as sentences from **both** sides — a lookup listed only on the
+  child would never surface when asking what references the parent;
+- the full column list (display name, logical name, type, required level, lookup
+  targets) regardless of the diagram's column display mode;
+- an overview section naming the model's hub tables;
+- no diagram embedded — image geometry would swamp every chunk.
+
+Save as `.md`, or as `.txt` if your agent platform does not accept Markdown; the content
+is identical and the headings still chunk correctly.
 
 ## Install (local)
 
