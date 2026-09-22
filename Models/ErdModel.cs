@@ -51,8 +51,46 @@ namespace DataverseErdVisualizer.Models
         public bool IsLookup { get; set; }
         public string RequiredLevel { get; set; }
 
+        /// <summary>The column's description as written by its maker (may be null).</summary>
+        public string Description { get; set; }
+
         /// <summary>Lookup target logical names (polymorphic lookups have several).</summary>
         public List<string> Targets { get; } = new List<string>();
+
+        /// <summary>
+        /// Allowed values of a choice, choices, status, status reason or yes/no
+        /// column, in the order the maker defined them. Empty for other types.
+        /// </summary>
+        public List<OptionModel> Options { get; } = new List<OptionModel>();
+    }
+
+    /// <summary>One allowed value of a choice-style column.</summary>
+    public class OptionModel
+    {
+        /// <summary>The stored number — what FetchXML, flows and the Web API use.</summary>
+        public int Value { get; set; }
+
+        public string Label { get; set; }
+
+        /// <summary>
+        /// For a status reason: the label of the status it belongs to (a status
+        /// reason is only valid while the record is in that status). Else null.
+        /// </summary>
+        public string StateLabel { get; set; }
+    }
+
+    /// <summary>
+    /// What an action on the parent ("one") record does to its child records.
+    /// Values are the SDK's CascadeType names: Cascade, Active, UserOwned,
+    /// NoCascade, RemoveLink, Restrict. Null when the metadata did not say.
+    /// </summary>
+    public class CascadeModel
+    {
+        public string Delete { get; set; }
+        public string Assign { get; set; }
+        public string Share { get; set; }
+        public string Unshare { get; set; }
+        public string Reparent { get; set; }
     }
 
     public enum RelationshipKind
@@ -82,6 +120,9 @@ namespace DataverseErdVisualizer.Models
         public string IntersectEntity { get; set; }
 
         public bool IsCustom { get; set; }
+
+        /// <summary>Cascade behaviour (1:N only; null for N:N or when not retrieved).</summary>
+        public CascadeModel Cascade { get; set; }
 
         public bool IsSelfReferential =>
             string.Equals(ReferencedEntity, ReferencingEntity, StringComparison.OrdinalIgnoreCase);

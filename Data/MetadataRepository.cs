@@ -34,14 +34,33 @@ namespace DataverseErdVisualizer.Data
             var knownLogicalNames = new HashSet<string>(
                 entities.Select(e => e.LogicalName), StringComparer.OrdinalIgnoreCase);
 
+            var pending = new List<PendingOptionSet>();
             foreach (var em in entities)
             {
                 int behavior = 0;
                 if (em.MetadataId != null)
                     components.RootBehavior.TryGetValue(em.MetadataId.Value, out behavior);
 
-                model.Entities.Add(MapEntity(em, behavior, components.AttributeIds));
+                model.Entities.Add(MapEntity(em, behavior, components.AttributeIds, pending));
                 CollectRelationships(em, model.Relationships);
+            }
+
+            // Choice columns bound to a GLOBAL choice may come back without
+            // their options; fetch those once rather than silently document an
+            // empty choice. Optional detail — never let it break the diagram.
+            if (pending.Count > 0)
+            {
+                progress?.Invoke($"Resolving {pending.Select(p => p.Name).Distinct().Count()} global choices…");
+                try
+                {
+                    var response = (RetrieveAllOptionSetsResponse)service.Execute(
+                        new RetrieveAllOptionSetsRequest { RetrieveAsIfPublished = false });
+                    ResolveGlobalOptionSets(pending, response.OptionSetMetadata);
+                }
+                catch
+                {
+                    // Leave those columns without options; everything else stands.
+                }
             }
 
             // Display names for lookup columns power the edge labels.
@@ -89,9 +108,10 @@ namespace DataverseErdVisualizer.Data
                 AttributeQuery = new AttributeQueryExpression
                 {
                     Properties = new MetadataPropertiesExpression(
-                        "LogicalName", "SchemaName", "DisplayName", "AttributeType",
+                        "LogicalName", "SchemaName", "DisplayName", "Description", "AttributeType",
                         "AttributeTypeName", "IsPrimaryId", "IsPrimaryName",
-                        "IsCustomAttribute", "RequiredLevel", "Targets", "AttributeOf")
+                        "IsCustomAttribute", "RequiredLevel", "Targets", "AttributeOf",
+                        "OptionSet")
                 },
                 RelationshipQuery = new RelationshipQueryExpression
                 {
@@ -99,7 +119,7 @@ namespace DataverseErdVisualizer.Data
                         "SchemaName", "ReferencedEntity", "ReferencingEntity",
                         "ReferencedAttribute", "ReferencingAttribute",
                         "Entity1LogicalName", "Entity2LogicalName", "IntersectEntityName",
-                        "IsCustomRelationship")
+                        "IsCustomRelationship", "CascadeConfiguration")
                 }
             };
 
@@ -154,7 +174,15 @@ namespace DataverseErdVisualizer.Data
             };
         }
 
-        private static EntityModel MapEntity(EntityMetadata em, int rootBehavior, HashSet<Guid> attributeComponents)
+        /// <summary>A choice column whose options live in a global choice not yet fetched.</summary>
+        internal sealed class PendingOptionSet
+        {
+            public AttributeModel Attribute;
+            public string Name;
+        }
+
+        internal static EntityModel MapEntity(EntityMetadata em, int rootBehavior,
+            HashSet<Guid> attributeComponents, List<PendingOptionSet> pending)
         {
             var entity = MapEntityShell(em);
             if (em.Attributes == null) return entity;
@@ -172,9 +200,43 @@ namespace DataverseErdVisualizer.Data
                     (am.MetadataId == null || !attributeComponents.Contains(am.MetadataId.Value)))
                     continue;
 
-                entity.Attributes.Add(MapAttribute(am));
+                entity.Attributes.Add(MapAttribute(am, pending));
             }
+
+            LinkStatusReasonsToStates(entity, em);
             return entity;
+        }
+
+        /// <summary>
+        /// A status reason is only valid while the record is in one particular
+        /// status ("Resolved" belongs to Inactive). Recording which one lets an
+        /// agent answer "which reasons can an active Case have?". Reads the raw
+        /// metadata so it works even when a segmented solution left the status
+        /// column itself out.
+        /// </summary>
+        private static void LinkStatusReasonsToStates(EntityModel entity, EntityMetadata em)
+        {
+            var stateColumn = em.Attributes.OfType<StateAttributeMetadata>().FirstOrDefault();
+            var statusColumn = em.Attributes.OfType<StatusAttributeMetadata>().FirstOrDefault();
+            if (stateColumn?.OptionSet?.Options == null || statusColumn?.OptionSet?.Options == null) return;
+
+            var mapped = entity.Attributes.FirstOrDefault(a =>
+                string.Equals(a.LogicalName, statusColumn.LogicalName, StringComparison.OrdinalIgnoreCase));
+            if (mapped == null) return;
+
+            var stateLabels = new Dictionary<int, string>();
+            foreach (var o in stateColumn.OptionSet.Options)
+                if (o.Value.HasValue)
+                    stateLabels[o.Value.Value] = Label(o.Label) ?? o.Value.Value.ToString();
+
+            foreach (var reason in statusColumn.OptionSet.Options.OfType<StatusOptionMetadata>())
+            {
+                string stateLabel;
+                if (!reason.Value.HasValue || !reason.State.HasValue) continue;
+                if (!stateLabels.TryGetValue(reason.State.Value, out stateLabel)) continue;
+                foreach (var option in mapped.Options.Where(x => x.Value == reason.Value.Value))
+                    option.StateLabel = stateLabel;
+            }
         }
 
         /// <summary>Filters out virtual companion columns and non-data plumbing.</summary>
@@ -202,12 +264,13 @@ namespace DataverseErdVisualizer.Data
             }
         }
 
-        private static AttributeModel MapAttribute(AttributeMetadata am)
+        internal static AttributeModel MapAttribute(AttributeMetadata am, List<PendingOptionSet> pending)
         {
             var attr = new AttributeModel
             {
                 LogicalName = am.LogicalName,
                 DisplayName = Label(am.DisplayName) ?? am.LogicalName,
+                Description = Label(am.Description),
                 IsPrimaryId = am.IsPrimaryId ?? false,
                 IsPrimaryName = am.IsPrimaryName ?? false,
                 IsCustom = am.IsCustomAttribute ?? false,
@@ -221,8 +284,89 @@ namespace DataverseErdVisualizer.Data
                             am.AttributeType == AttributeTypeCode.Customer ||
                             am.AttributeType == AttributeTypeCode.Owner;
 
+            MapOptions(am, attr, pending);
+
             attr.TypeLabel = TypeLabel(am, attr);
             return attr;
+        }
+
+        /// <summary>
+        /// Copies the allowed values of choice, choices, status, status reason
+        /// and yes/no columns. A column bound to a global choice may arrive with
+        /// the choice named but its options empty; those are queued for one
+        /// follow-up fetch instead of being documented as having no values.
+        /// </summary>
+        private static void MapOptions(AttributeMetadata am, AttributeModel attr, List<PendingOptionSet> pending)
+        {
+            var choice = am as EnumAttributeMetadata;
+            if (choice?.OptionSet != null)
+            {
+                var set = choice.OptionSet;
+                if (set.Options != null && set.Options.Count > 0)
+                {
+                    foreach (var o in set.Options) AddOption(attr, o);
+                }
+                else if ((set.IsGlobal ?? false) && !string.IsNullOrEmpty(set.Name))
+                {
+                    pending?.Add(new PendingOptionSet { Attribute = attr, Name = set.Name });
+                }
+                return;
+            }
+
+            var yesNo = am as BooleanAttributeMetadata;
+            if (yesNo?.OptionSet != null)
+            {
+                var set = yesNo.OptionSet;
+                if (set.TrueOption == null && set.FalseOption == null)
+                {
+                    if ((set.IsGlobal ?? false) && !string.IsNullOrEmpty(set.Name))
+                        pending?.Add(new PendingOptionSet { Attribute = attr, Name = set.Name });
+                    return;
+                }
+                AddOption(attr, set.TrueOption);
+                AddOption(attr, set.FalseOption);
+            }
+        }
+
+        /// <summary>Fills queued columns from the organization's global choices.</summary>
+        internal static void ResolveGlobalOptionSets(List<PendingOptionSet> pending,
+            IEnumerable<OptionSetMetadataBase> globals)
+        {
+            if (pending == null || globals == null) return;
+
+            var byName = new Dictionary<string, OptionSetMetadataBase>(StringComparer.OrdinalIgnoreCase);
+            foreach (var g in globals)
+                if (!string.IsNullOrEmpty(g?.Name)) byName[g.Name] = g;
+
+            foreach (var p in pending)
+            {
+                OptionSetMetadataBase set;
+                if (p.Attribute.Options.Count > 0 || !byName.TryGetValue(p.Name, out set)) continue;
+
+                var choice = set as OptionSetMetadata;
+                if (choice?.Options != null)
+                {
+                    foreach (var o in choice.Options) AddOption(p.Attribute, o);
+                    continue;
+                }
+
+                var yesNo = set as BooleanOptionSetMetadata;
+                if (yesNo != null)
+                {
+                    AddOption(p.Attribute, yesNo.TrueOption);
+                    AddOption(p.Attribute, yesNo.FalseOption);
+                }
+            }
+        }
+
+        private static void AddOption(AttributeModel attr, OptionMetadata o)
+        {
+            if (o?.Value == null) return;
+            attr.Options.Add(new OptionModel
+            {
+                Value = o.Value.Value,
+                Label = Label(o.Label) ?? o.Value.Value.ToString()
+            });
         }
 
         private static string TypeLabel(AttributeMetadata am, AttributeModel attr)
@@ -282,8 +426,9 @@ namespace DataverseErdVisualizer.Data
                     });
         }
 
-        private static RelationshipModel MapOneToMany(OneToManyRelationshipMetadata rel)
+        internal static RelationshipModel MapOneToMany(OneToManyRelationshipMetadata rel)
         {
+            var c = rel.CascadeConfiguration;
             return new RelationshipModel
             {
                 SchemaName = rel.SchemaName,
@@ -291,7 +436,18 @@ namespace DataverseErdVisualizer.Data
                 ReferencedEntity = rel.ReferencedEntity,
                 ReferencingEntity = rel.ReferencingEntity,
                 LookupAttribute = rel.ReferencingAttribute,
-                IsCustom = rel.IsCustomRelationship ?? false
+                IsCustom = rel.IsCustomRelationship ?? false,
+                // Only actions available since the earliest SDKs the XrmToolBox
+                // host may load; newer ones (Archive, RollupView) would throw a
+                // MissingMethodException against an older host assembly.
+                Cascade = c == null ? null : new CascadeModel
+                {
+                    Delete = c.Delete?.ToString(),
+                    Assign = c.Assign?.ToString(),
+                    Share = c.Share?.ToString(),
+                    Unshare = c.Unshare?.ToString(),
+                    Reparent = c.Reparent?.ToString()
+                }
             };
         }
 
