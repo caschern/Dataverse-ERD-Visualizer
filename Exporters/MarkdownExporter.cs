@@ -350,23 +350,33 @@ namespace DataverseErdVisualizer.Exporters
                 var lookup = Esc(rel.LookupDisplayName ?? rel.LookupAttribute ?? "");
                 var schema = "`" + rel.SchemaName + "`";
 
-                if (edge.IsSelf)
+                // Kind is tested before self-ness: a table CAN have a
+                // many-to-many with itself (linking records to other records of
+                // the same table), and that is not a parent-child hierarchy —
+                // it has no lookup column to name and no cascade behaviour.
+                if (rel.Kind == RelationshipKind.ManyToMany)
+                {
+                    lines.Add(edge.IsSelf
+                        ? $"- **{name}** has a many-to-many relationship with itself: {name} records " +
+                          $"can be linked to other {name} records, through the intersect table " +
+                          $"`{rel.IntersectEntity}`. Relationship {schema}."
+                        : $"- **{name}** has a many-to-many relationship with **{otherName}** " +
+                          $"(`{otherId}`), through the intersect table `{rel.IntersectEntity}`. " +
+                          $"Relationship {schema}.");
+                }
+                else if (edge.IsSelf)
                 {
                     // A hierarchy is exactly where "what happens to the children
                     // when I delete the parent?" gets asked, so it needs the
                     // cascade clause as much as any other relationship. Both
                     // ends are this table, so the child side is said as "child
                     // X records" to keep the sentence readable.
-                    lines.Add($"- **{name}** references itself through the lookup column " +
-                              $"**{lookup}** (`{rel.LookupAttribute}`), forming a hierarchy of " +
+                    var through = string.IsNullOrEmpty(lookup)
+                        ? ""
+                        : $" through the lookup column **{lookup}** (`{rel.LookupAttribute}`)";
+                    lines.Add($"- **{name}** references itself{through}, forming a hierarchy of " +
                               $"{name} records. Relationship {schema}." +
                               Behaviour(rel, parent: name, child: "child " + name, lookup: lookup));
-                }
-                else if (rel.Kind == RelationshipKind.ManyToMany)
-                {
-                    lines.Add($"- **{name}** has a many-to-many relationship with **{otherName}** " +
-                              $"(`{otherId}`), through the intersect table `{rel.IntersectEntity}`. " +
-                              $"Relationship {schema}.");
                 }
                 else if (isFrom)
                 {

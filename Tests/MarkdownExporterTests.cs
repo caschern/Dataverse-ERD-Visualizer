@@ -301,6 +301,34 @@ namespace DataverseErdVisualizer.Tests
         }
 
         [Fact]
+        public void A_table_can_have_a_many_to_many_with_itself()
+        {
+            // Linking records to other records of the same table is not a
+            // parent-child hierarchy: there is no lookup column to name and no
+            // cascade behaviour to describe.
+            var model = BuildModel();
+            model.Relationships.Add(new RelationshipModel
+            {
+                SchemaName = "cc_case_cc_case",
+                Kind = RelationshipKind.ManyToMany,
+                ReferencedEntity = "cc_case",
+                ReferencingEntity = "cc_case",
+                IntersectEntity = "cc_case_cc_case_intersect"
+            });
+
+            var md = MarkdownExporter.Generate(Diagram(model));
+
+            Assert.Contains(
+                "**Case** has a many-to-many relationship with itself: Case records can be linked " +
+                "to other Case records, through the intersect table `cc_case_cc_case_intersect`.", md);
+
+            // It must not be described as a hierarchy, and must never render an
+            // empty column name from the lookup fields an N:N does not have.
+            Assert.DoesNotContain("**Case** references itself", md);
+            Assert.DoesNotContain("****", md);
+        }
+
+        [Fact]
         public void Choice_columns_list_their_values_with_the_stored_numbers()
         {
             var md = MarkdownExporter.Generate(Build());
