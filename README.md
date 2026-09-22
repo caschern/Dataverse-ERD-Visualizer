@@ -92,6 +92,28 @@ write. A knowledge base is uploaded as a folder, so anything sitting beside thes
 gets indexed with them — mixing two solutions' documentation into one upload will have
 the agent answer questions about one system using the other's model.
 
+### Comparing environments and releases
+
+*Compare* answers "what changed in the data model?" — between Dev and Prod, or before
+and after a release:
+
+1. **Compare → Save model snapshot…** freezes the loaded solution's data model in an
+   `.erdsnapshot` file (tables, columns, choice values, relationships and their cascade
+   behaviour).
+2. Later, or connected to another environment: **Compare → Compare with a snapshot…**
+   compares that file against the solution loaded now. **Compare two snapshots…** does
+   the same for two saved files, with no connection at all.
+3. You get a summary, then a Markdown **change report**: tables added, removed and
+   changed; column additions, removals and changes (type, required level, lookup
+   targets, description); choice values added, removed or relabelled; relationships
+   added, removed and changed, including cascade behaviour. Platform plumbing (owner,
+   created by, currency…) is listed separately so a platform update can't bury the
+   solution's own changes.
+
+Tables and columns are matched by logical name, choice values by the number they are
+stored as, and relationships by schema name. Display names are compared in the language
+of whoever captured each side, so capture both sides in the same language.
+
 ## Install (local)
 
 1. Build: `dotnet build DataverseErdVisualizer.csproj -c Release`

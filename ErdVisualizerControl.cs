@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Reflection;
 using System.Windows.Forms;
+using DataverseErdVisualizer.Compare;
 using DataverseErdVisualizer.Data;
 using DataverseErdVisualizer.Exporters;
 using DataverseErdVisualizer.Layout;
@@ -23,6 +25,7 @@ namespace DataverseErdVisualizer
         private ToolStripDropDownButton _columnsDrop;
         private ToolStripDropDownButton _optionsDrop;
         private ToolStripDropDownButton _exportDrop;
+        private ToolStripDropDownButton _compareDrop;
         private ToolStripButton _fitButton;
         private ToolStripButton _clearFocusButton;
         private ToolStripTextBox _findBox;
@@ -90,6 +93,7 @@ namespace DataverseErdVisualizer
             _columnsDrop = BuildColumnsDropDown();
             _optionsDrop = BuildOptionsDropDown();
             _exportDrop = BuildExportDropDown();
+            _compareDrop = BuildCompareDropDown();
 
             _fitButton = new ToolStripButton("Zoom to Fit")
             {
@@ -135,7 +139,7 @@ namespace DataverseErdVisualizer
             {
                 _loadButton, new ToolStripSeparator(),
                 _columnsDrop, _optionsDrop, new ToolStripSeparator(),
-                _exportDrop, new ToolStripSeparator(),
+                _exportDrop, _compareDrop, new ToolStripSeparator(),
                 _fitButton, _clearFocusButton, _findBox, new ToolStripSeparator(),
                 _status, closeButton
             });
@@ -374,6 +378,45 @@ namespace DataverseErdVisualizer
             kb.DropDownItems.Add(perTable);
             kb.DropDownItems.Add(single);
             drop.DropDownItems.Add(kb);
+            return drop;
+        }
+
+        /// <summary>
+        /// The comparison workflow in one place: freeze the model now, compare
+        /// against it later — or compare two frozen models without connecting
+        /// to anything at all.
+        /// </summary>
+        private ToolStripDropDownButton BuildCompareDropDown()
+        {
+            var drop = new ToolStripDropDownButton("Compare")
+            {
+                DisplayStyle = ToolStripItemDisplayStyle.Text,
+                ToolTipText = "Compare this solution's data model with another environment or an earlier point in time"
+            };
+
+            var save = new ToolStripMenuItem("Save model snapshot…")
+            {
+                ToolTipText = "Freeze the loaded solution's data model in a file, to compare against " +
+                              "later or from another environment."
+            };
+            save.Click += (s, e) => SaveSnapshot();
+
+            var withSnapshot = new ToolStripMenuItem("Compare with a snapshot…")
+            {
+                ToolTipText = "What changed between a saved snapshot and the solution loaded now?"
+            };
+            withSnapshot.Click += (s, e) => CompareWithSnapshot();
+
+            var twoSnapshots = new ToolStripMenuItem("Compare two snapshots…")
+            {
+                ToolTipText = "Compare two saved snapshots. No connection needed."
+            };
+            twoSnapshots.Click += (s, e) => CompareTwoSnapshots();
+
+            drop.DropDownItems.Add(save);
+            drop.DropDownItems.Add(new ToolStripSeparator());
+            drop.DropDownItems.Add(withSnapshot);
+            drop.DropDownItems.Add(twoSnapshots);
             return drop;
         }
 
@@ -951,6 +994,193 @@ namespace DataverseErdVisualizer
             {
                 Cursor = Cursors.Default;
             }
+        }
+
+        // ---------------------------------------------------------- comparing
+
+        /// <summary>
+        /// The connection's name, used to label which side is which.
+        ///
+        /// Read by reflection on purpose. <c>ConnectionDetail</c> lives in the
+        /// host's McTools.Xrm.Connection assembly, and binding to it at compile
+        /// time fails outright (the package resolves an older version than
+        /// XrmToolBox.Extensibility was built against) — and would otherwise tie
+        /// this plugin to one host version. A label is a nicety: if the host
+        /// renames anything, the snapshot is simply unlabelled.
+        /// </summary>
+        private string EnvironmentName()
+        {
+            try
+            {
+                const BindingFlags Public = BindingFlags.Public | BindingFlags.Instance;
+                var detail = GetType().GetProperty("ConnectionDetail", Public)?.GetValue(this);
+                if (detail == null) return null;
+
+                string Read(string property)
+                    => detail.GetType().GetProperty(property, Public)?.GetValue(detail) as string;
+
+                var name = Read("ConnectionName");
+                return string.IsNullOrWhiteSpace(name) ? Read("OrganizationFriendlyName") : name;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>The loaded model as a snapshot taken right now.</summary>
+        private ModelSnapshot CurrentSnapshot() => new ModelSnapshot
+        {
+            CapturedOn = DateTime.UtcNow,
+            Environment = EnvironmentName(),
+            ToolVersion = typeof(ErdVisualizerControl).Assembly.GetName().Version.ToString(),
+            Model = _model
+        };
+
+        private bool RequireModel()
+        {
+            if (_model != null) return true;
+            MessageBox.Show(this, "Load a solution first.", "No solution loaded",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return false;
+        }
+
+        private void SaveSnapshot()
+        {
+            if (!RequireModel()) return;
+
+            var snapshot = CurrentSnapshot();
+            using (var dialog = new SaveFileDialog())
+            {
+                dialog.Filter = SnapshotStore.DialogFilter;
+                dialog.FileName = MakeSafeFileName(
+                    (_model.Solution?.UniqueName ?? "solution") +
+                    (string.IsNullOrEmpty(snapshot.Environment) ? "" : "-" + snapshot.Environment) +
+                    "-" + DateTime.Now.ToString("yyyyMMdd")) + SnapshotStore.Extension;
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                try
+                {
+                    SnapshotStore.Save(snapshot, dialog.FileName);
+                    MessageBox.Show(this,
+                        $"Saved the data model of {_model.Solution?.FriendlyName} " +
+                        $"({_model.Entities.Count(e => !e.IsExternal && !e.IsIntersect)} tables).\n\n" +
+                        "Use Compare → Compare with a snapshot… later, or from another environment, " +
+                        "to see what changed.",
+                        "Snapshot saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "Could not save the snapshot:\n\n" + ex.Message, "Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private void CompareWithSnapshot()
+        {
+            if (!RequireModel()) return;
+
+            var baseline = PickSnapshot("Choose the snapshot to compare the loaded solution against");
+            if (baseline == null) return;
+
+            ShowComparison(baseline, CurrentSnapshot());
+        }
+
+        private void CompareTwoSnapshots()
+        {
+            var baseline = PickSnapshot("Choose the BASELINE snapshot — the earlier one, or the reference environment");
+            if (baseline == null) return;
+
+            var current = PickSnapshot("Choose the snapshot to compare with it");
+            if (current == null) return;
+
+            ShowComparison(baseline, current);
+        }
+
+        private ModelSnapshot PickSnapshot(string title)
+        {
+            using (var dialog = new OpenFileDialog { Filter = SnapshotStore.DialogFilter, Title = title })
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return null;
+                try
+                {
+                    return SnapshotStore.Load(dialog.FileName);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, ex.Message, "Cannot read snapshot",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return null;
+                }
+            }
+        }
+
+        /// <summary>Summarises the comparison, then offers the full change report.</summary>
+        private void ShowComparison(ModelSnapshot baseline, ModelSnapshot current)
+        {
+            ErdDiff diff;
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+                diff = ModelDiff.Compare(baseline.Model, current.Model);
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+            }
+
+            var heading = "Baseline: " + baseline.Describe() + "\nCurrent: " + current.Describe() + "\n\n";
+
+            if (!diff.HasChanges)
+            {
+                if (MessageBox.Show(this, heading + "No differences: the two data models match.\n\n" +
+                                          "Save a report saying so anyway?",
+                        "No differences", MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes)
+                    return;
+            }
+            else
+            {
+                int systemCount = diff.Relationships.Count(r => r.IsSystem);
+                var summary = heading +
+                              Tally("Tables", diff.Tables.Select(t => t.Kind)) + "\n" +
+                              Tally("Relationships", diff.Relationships.Where(r => !r.IsSystem).Select(r => r.Kind)) +
+                              (systemCount > 0 ? $"\n(plus {systemCount} system relationship change(s))" : "") +
+                              "\n\nSave the full change report?";
+                if (MessageBox.Show(this, summary, "Data model changes",
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes)
+                    return;
+            }
+
+            using (var dialog = new SaveFileDialog())
+            {
+                dialog.Filter = "Markdown (*.md)|*.md|Text file (*.txt)|*.txt";
+                dialog.FileName = MakeSafeFileName(
+                    (current.Model?.Solution?.UniqueName ?? "model") + "-changes-" +
+                    DateTime.Now.ToString("yyyyMMdd")) + ".md";
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                try
+                {
+                    DiffReport.Save(baseline, current, diff, dialog.FileName);
+                    System.Diagnostics.Process.Start(dialog.FileName);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "Could not save the report:\n\n" + ex.Message, "Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private static string Tally(string what, IEnumerable<ChangeKind> kinds)
+        {
+            var list = kinds.ToList();
+            if (list.Count == 0) return what + ": no changes";
+            return what + ": " + string.Join(", ",
+                new[] { ChangeKind.Added, ChangeKind.Removed, ChangeKind.Changed }
+                    .Where(k => list.Contains(k))
+                    .Select(k => list.Count(x => x == k) + " " + k.ToString().ToLowerInvariant()));
         }
 
         private static string MakeSafeFileName(string name)

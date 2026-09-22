@@ -263,7 +263,7 @@ namespace DataverseErdVisualizer
         /// A 1:N and its mirrored registration (or duplicates across entities'
         /// relationship collections) share a schema name — keep one of each.
         /// </summary>
-        private static IEnumerable<RelationshipModel> DedupeRelationships(IEnumerable<RelationshipModel> rels)
+        internal static IEnumerable<RelationshipModel> DedupeRelationships(IEnumerable<RelationshipModel> rels)
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var rel in rels)
@@ -273,7 +273,7 @@ namespace DataverseErdVisualizer
             }
         }
 
-        private static bool IsSystemRelationship(RelationshipModel rel)
+        internal static bool IsSystemRelationship(RelationshipModel rel)
         {
             if (SystemEntities.Contains(rel.ReferencedEntity)) return true;
             if (SystemEntities.Contains(rel.ReferencingEntity)) return true;
