@@ -21,8 +21,6 @@ namespace DataverseErdVisualizer.Layout
     /// </summary>
     public static class LayoutStore
     {
-        private static string Folder => Path.Combine(SettingsFolder.Root, "layouts");
-
         public static Dictionary<string, PointF> Load(string solutionKey)
         {
             var result = new Dictionary<string, PointF>(StringComparer.OrdinalIgnoreCase);
@@ -65,7 +63,7 @@ namespace DataverseErdVisualizer.Layout
                     return;
                 }
 
-                Directory.CreateDirectory(Folder);
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
                 var sb = new StringBuilder();
                 foreach (var entry in positions)
                     sb.Append(entry.Key).Append('\t')
@@ -93,15 +91,6 @@ namespace DataverseErdVisualizer.Layout
         }
 
         private static string PathFor(string solutionKey)
-        {
-            if (string.IsNullOrWhiteSpace(solutionKey)) return null;
-
-            var name = solutionKey.Trim();
-            foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
-            if (name.Length > 80) name = name.Substring(0, 80);
-            if (name.Length == 0) return null;
-
-            return Path.Combine(Folder, name + ".layout");
-        }
+            => SettingsFolder.PerSolutionFile("layouts", solutionKey, ".layout");
     }
 }

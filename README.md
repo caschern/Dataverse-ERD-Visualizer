@@ -42,7 +42,10 @@ and built on the same custom diagram engine (GDI+/SVG/PDF surfaces + Sugiyama la
   (toggling options, ticking tables) and across sessions, stored per solution. Clear it
   with *Options → Reset manual layout*.
 - **So do your preferences** — the column mode and every toggle under *Options* are
-  remembered between sessions.
+  remembered between sessions, and so are the tables you tick, per solution. Tables
+  added to a solution since your last visit get the usual default for its size
+  (ticked in small solutions, unticked above 100 tables); tables you unticked stay
+  unticked.
 - **Exports** — PNG, SVG (Visio/draw.io/Figma-editable), vector PDF, a self-contained
   HTML data dictionary, a Mermaid `erDiagram` for wikis and markdown, and a
   **Markdown knowledge base for AI agents**.
