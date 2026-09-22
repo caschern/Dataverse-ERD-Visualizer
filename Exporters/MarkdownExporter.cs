@@ -12,6 +12,17 @@ namespace DataverseErdVisualizer.Exporters
     {
         public int FileCount { get; set; }
         public string OverviewPath { get; set; }
+
+        /// <summary>The folder actually written to (a subfolder of the chosen one).</summary>
+        public string FolderPath { get; set; }
+
+        /// <summary>
+        /// Markdown files already in that folder which this export did not
+        /// write — leftovers from an earlier run, describing tables that may no
+        /// longer exist. Uploaded alongside, they would ground an agent in a
+        /// model that is out of date.
+        /// </summary>
+        public List<string> StaleFiles { get; } = new List<string>();
     }
 
     /// <summary>
@@ -64,8 +75,14 @@ namespace DataverseErdVisualizer.Exporters
         // ----------------------------------------------------- file per table
 
         /// <summary>
-        /// Writes one Markdown file per table plus an overview file, into the
-        /// given folder. Existing files with the same names are replaced.
+        /// Writes one Markdown file per table plus an overview file, into a
+        /// subfolder of the chosen folder named after the solution.
+        ///
+        /// The subfolder is not tidiness: a knowledge base is uploaded as a
+        /// folder, so anything else sitting beside these files gets indexed
+        /// with them. Writing into a shared folder once put a second, unrelated
+        /// solution's documentation into the same upload, which would have had
+        /// the agent answer questions about one system using another's model.
         /// </summary>
         public static MarkdownExportResult SavePerTable(ErdDiagram diagram, string folder)
         {
@@ -73,13 +90,23 @@ namespace DataverseErdVisualizer.Exporters
             var tables = Tables(graph);
             var encoding = new UTF8Encoding(false);
 
+            var target = Path.Combine(folder, FolderName(graph.Title));
+            Directory.CreateDirectory(target);
+
+            var before = new HashSet<string>(
+                Directory.GetFiles(target, "*.md").Select(Path.GetFileName),
+                StringComparer.OrdinalIgnoreCase);
+
+            var result = new MarkdownExportResult { FolderPath = target };
+            var written = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             var overview = new StringBuilder();
             WriteDocumentHeader(overview, graph, tables.Count);
             WriteOverview(overview, graph, tables, perTableFiles: true);
-            var overviewPath = Path.Combine(folder, "00-model-overview.md");
-            File.WriteAllText(overviewPath, overview.ToString(), encoding);
+            result.OverviewPath = Path.Combine(target, "00-model-overview.md");
+            File.WriteAllText(result.OverviewPath, overview.ToString(), encoding);
+            written.Add("00-model-overview.md");
 
-            int count = 1;
             var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "00-model-overview" };
             foreach (var node in tables)
             {
@@ -88,12 +115,25 @@ namespace DataverseErdVisualizer.Exporters
                 // of these arrives with no sight of the overview.
                 WriteTable(sb, graph, node, headingLevel: 1,
                     solutionName: graph.Title, solutionDetail: graph.Subtitle);
-                File.WriteAllText(Path.Combine(folder, FileName(node, used) + ".md"),
-                    sb.ToString(), encoding);
-                count++;
+
+                var fileName = FileName(node, used) + ".md";
+                File.WriteAllText(Path.Combine(target, fileName), sb.ToString(), encoding);
+                written.Add(fileName);
             }
 
-            return new MarkdownExportResult { FileCount = count, OverviewPath = overviewPath };
+            result.FileCount = written.Count;
+            before.ExceptWith(written);
+            result.StaleFiles.AddRange(before.OrderBy(f => f, StringComparer.OrdinalIgnoreCase));
+            return result;
+        }
+
+        /// <summary>Folder name for one solution's knowledge base.</summary>
+        private static string FolderName(string solutionTitle)
+        {
+            var name = (solutionTitle ?? "").Trim();
+            foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
+            if (name.Length > 60) name = name.Substring(0, 60).Trim();
+            return (name.Length == 0 ? "solution" : name) + "-knowledge-base";
         }
 
         private static string FileName(ErdNode node, HashSet<string> used)
@@ -312,8 +352,15 @@ namespace DataverseErdVisualizer.Exporters
 
                 if (edge.IsSelf)
                 {
+                    // A hierarchy is exactly where "what happens to the children
+                    // when I delete the parent?" gets asked, so it needs the
+                    // cascade clause as much as any other relationship. Both
+                    // ends are this table, so the child side is said as "child
+                    // X records" to keep the sentence readable.
                     lines.Add($"- **{name}** references itself through the lookup column " +
-                              $"**{lookup}** (`{rel.LookupAttribute}`). Relationship {schema}.");
+                              $"**{lookup}** (`{rel.LookupAttribute}`), forming a hierarchy of " +
+                              $"{name} records. Relationship {schema}." +
+                              Behaviour(rel, parent: name, child: "child " + name, lookup: lookup));
                 }
                 else if (rel.Kind == RelationshipKind.ManyToMany)
                 {

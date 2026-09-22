@@ -13,7 +13,17 @@ namespace DataverseErdVisualizer.Tests
 {
     public class MarkdownExporterTests
     {
-        private static ErdDiagram Build()
+        private static ErdDiagram Build() => Diagram(BuildModel());
+
+        private static ErdDiagram Diagram(ErdModel model)
+        {
+            using (var bmp = new Bitmap(1, 1))
+            using (var g = Graphics.FromImage(bmp))
+            using (var measure = new GdiDiagramSurface(g))
+                return ErdGraphBuilder.Build(model, new ErdOptions(), measure);
+        }
+
+        private static ErdModel BuildModel()
         {
             var model = new ErdModel
             {
@@ -111,10 +121,7 @@ namespace DataverseErdVisualizer.Tests
                 }
             });
 
-            using (var bmp = new Bitmap(1, 1))
-            using (var g = Graphics.FromImage(bmp))
-            using (var measure = new GdiDiagramSurface(g))
-                return ErdGraphBuilder.Build(model, new ErdOptions(), measure);
+            return model;
         }
 
         [Fact]
@@ -185,13 +192,19 @@ namespace DataverseErdVisualizer.Tests
             {
                 var result = MarkdownExporter.SavePerTable(Build(), folder);
 
-                var files = Directory.GetFiles(folder, "*.md").Select(Path.GetFileName).ToList();
+                // Written into a subfolder named for the solution, never loose
+                // in the chosen folder beside unrelated documentation.
+                Assert.Equal(Path.Combine(folder, "Case Management-knowledge-base"), result.FolderPath);
+                Assert.Empty(Directory.GetFiles(folder, "*.md"));
+
+                var files = Directory.GetFiles(result.FolderPath, "*.md").Select(Path.GetFileName).ToList();
                 Assert.Equal(3, result.FileCount);          // 2 tables + overview
                 Assert.Contains("00-model-overview.md", files);
                 Assert.Contains("contact.md", files);
                 Assert.Contains("cc_case.md", files);
+                Assert.Empty(result.StaleFiles);
 
-                var caseFile = File.ReadAllText(Path.Combine(folder, "cc_case.md"));
+                var caseFile = File.ReadAllText(Path.Combine(result.FolderPath, "cc_case.md"));
 
                 // Standalone file: top-level heading, and it must carry its own
                 // provenance and identity because nothing else travels with it.
@@ -202,11 +215,11 @@ namespace DataverseErdVisualizer.Tests
                 Assert.Contains("## Relationships of Case", caseFile);
 
                 // The relationship appears in BOTH files, phrased from each side.
-                var contactFile = File.ReadAllText(Path.Combine(folder, "contact.md"));
+                var contactFile = File.ReadAllText(Path.Combine(result.FolderPath, "contact.md"));
                 Assert.Contains("**Case** references **Contact**", caseFile);
                 Assert.Contains("**Contact** is referenced by **Case**", contactFile);
 
-                var overview = File.ReadAllText(Path.Combine(folder, "00-model-overview.md"));
+                var overview = File.ReadAllText(Path.Combine(result.FolderPath, "00-model-overview.md"));
                 Assert.Contains("Model overview", overview);
                 Assert.Contains("own file in this folder", overview);
                 Assert.Contains("Tables documented: 2", overview);
@@ -225,6 +238,66 @@ namespace DataverseErdVisualizer.Tests
             Assert.Contains("## Model overview", md);
             Assert.Contains("Tables documented: 2", md);
             Assert.Contains("All tables covered:", md);
+        }
+
+        [Fact]
+        public void Leftovers_from_an_earlier_export_are_reported()
+        {
+            var folder = Path.Combine(Path.GetTempPath(), "erd-kb-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(folder);
+            try
+            {
+                var first = MarkdownExporter.SavePerTable(Build(), folder);
+
+                // A table that existed last time but not now: its file lingers
+                // and would teach the agent a model that is out of date.
+                File.WriteAllText(Path.Combine(first.FolderPath, "cc_deletedtable.md"), "# Gone");
+
+                var second = MarkdownExporter.SavePerTable(Build(), folder);
+
+                Assert.Equal(first.FolderPath, second.FolderPath);   // same run, same place
+                Assert.Equal(new[] { "cc_deletedtable.md" }, second.StaleFiles.ToArray());
+                Assert.Equal(3, second.FileCount);
+            }
+            finally
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
+
+        [Fact]
+        public void Self_referential_relationships_state_their_cascade_behaviour()
+        {
+            var model = BuildModel();
+            model.Entities.Single(e => e.LogicalName == "cc_case").Attributes.Add(new AttributeModel
+            {
+                LogicalName = "cc_parentcaseid",
+                DisplayName = "Parent Case",
+                IsLookup = true,
+                TypeLabel = "Lookup(cc_case)"
+            });
+            model.Relationships.Add(new RelationshipModel
+            {
+                SchemaName = "cc_case_parent_case",
+                Kind = RelationshipKind.OneToMany,
+                ReferencedEntity = "cc_case",
+                ReferencingEntity = "cc_case",
+                LookupAttribute = "cc_parentcaseid",
+                LookupDisplayName = "Parent Case",
+                Cascade = new CascadeModel
+                {
+                    Delete = "Cascade", Assign = "Cascade", Share = "Cascade",
+                    Unshare = "Cascade", Reparent = "Cascade"
+                }
+            });
+
+            var md = MarkdownExporter.Generate(Diagram(model));
+
+            // A hierarchy is exactly where "what happens to the children when I
+            // delete the parent?" gets asked.
+            Assert.Contains("forming a hierarchy of Case records", md);
+            Assert.Contains("Behaviour: Parental.", md);
+            Assert.Contains("Deleting Case records also deletes their related child Case records.", md);
         }
 
         [Fact]

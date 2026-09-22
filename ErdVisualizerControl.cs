@@ -668,7 +668,8 @@ namespace DataverseErdVisualizer
             string folder;
             using (var dlg = new FolderBrowserDialog
             {
-                Description = $"Choose a folder for the knowledge base ({tables} table files plus an overview)"
+                Description = $"Choose where to put the knowledge base ({tables} table files plus " +
+                              "an overview). A subfolder is created for this solution."
             })
             {
                 if (dlg.ShowDialog(this) != DialogResult.OK) return;
@@ -680,14 +681,27 @@ namespace DataverseErdVisualizer
                 Cursor = Cursors.WaitCursor;
                 var result = MarkdownExporter.SavePerTable(diagram, folder);
 
-                var message = $"Wrote {result.FileCount} files.\n\n" +
-                              "Upload the whole folder as a Copilot Studio knowledge source, or " +
-                              "sync it to a SharePoint library and point the agent there.\n\n" +
-                              "Open the folder now?";
-                if (MessageBox.Show(this, message, "Knowledge base exported",
-                        MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+                var message = $"Wrote {result.FileCount} files to:\n{result.FolderPath}\n\n";
+
+                // Leftovers from an earlier export describe tables that may no
+                // longer exist; uploaded together they would ground the agent
+                // in a model that is out of date.
+                if (result.StaleFiles.Count > 0)
                 {
-                    System.Diagnostics.Process.Start("explorer.exe", "\"" + folder + "\"");
+                    message += $"⚠ {result.StaleFiles.Count} other Markdown file(s) were already in " +
+                               "that folder and were NOT written by this export — likely left over " +
+                               "from an earlier run. Delete them before uploading, or the agent " +
+                               "will also learn tables that are no longer in the solution.\n\n";
+                }
+
+                message += "Upload this folder as a Copilot Studio knowledge source, or sync it to " +
+                           "a SharePoint library and point the agent there.\n\nOpen the folder now?";
+
+                var icon = result.StaleFiles.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information;
+                if (MessageBox.Show(this, message, "Knowledge base exported",
+                        MessageBoxButtons.YesNo, icon) == DialogResult.Yes)
+                {
+                    System.Diagnostics.Process.Start("explorer.exe", "\"" + result.FolderPath + "\"");
                 }
             }
             catch (Exception ex)
