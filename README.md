@@ -23,6 +23,9 @@ and built on the same custom diagram engine (GDI+/SVG/PDF surfaces + Sugiyama la
   components, so "do not include subcomponents" tables only show their real columns.
 - **Interactive preview** — zoom (Ctrl+wheel), pan, click a table for a full details
   pane (all columns + relationships), drag boxes to reposition, find-by-name.
+- **Your arrangement sticks** — dragged tables keep their position through rebuilds
+  (toggling options, ticking tables) and across sessions, stored per solution. Clear it
+  with *Options → Reset manual layout*.
 - **Exports** — PNG, SVG (Visio/draw.io/Figma-editable), vector PDF, a self-contained
   HTML data dictionary, a Mermaid `erDiagram` for wikis and markdown, and a
   **Markdown knowledge base for AI agents**.

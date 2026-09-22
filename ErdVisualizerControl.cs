@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows.Forms;
 using DataverseErdVisualizer.Data;
 using DataverseErdVisualizer.Exporters;
+using DataverseErdVisualizer.Layout;
 using DataverseErdVisualizer.Models;
 using DataverseErdVisualizer.Rendering;
 using DataverseErdVisualizer.UI;
@@ -38,6 +39,14 @@ namespace DataverseErdVisualizer
 
         private List<SolutionInfo> _allSolutions = new List<SolutionInfo>();
         private ErdModel _model;
+
+        /// <summary>
+        /// Hand-placed table positions for the loaded solution, keyed by logical
+        /// name. Held here rather than on the diagram because every rebuild
+        /// creates a new graph.
+        /// </summary>
+        private Dictionary<string, PointF> _pinned = new Dictionary<string, PointF>(StringComparer.OrdinalIgnoreCase);
+        private string _layoutKey;
         private readonly ErdOptions _options = new ErdOptions();
         private readonly Timer _rebuildDebounce;
         private bool _suspendEntityEvents;
@@ -182,6 +191,7 @@ namespace DataverseErdVisualizer
             _panel = new ErdDiagramPanel { Dock = DockStyle.Fill };
             _details = new EntityDetailsPane();
             _panel.NodeSelected += n => _details.SetNode(n, _panel.Diagram?.Graph);
+            _panel.TableMoved += OnTableMoved;
             _panel.FullScreenChanged += full => _outerSplit.Panel1Collapsed = full;
 
             _outerSplit = new SplitContainer
@@ -260,6 +270,15 @@ namespace DataverseErdVisualizer
             drop.DropDownItems.Add(new ToolStripSeparator());
             Toggle("System columns && relationships", _options.IncludeSystemRelationships,
                 v => _options.IncludeSystemRelationships = v);
+
+            drop.DropDownItems.Add(new ToolStripSeparator());
+            var reset = new ToolStripMenuItem("Reset manual layout")
+            {
+                ToolTipText = "Tables you drag keep their position across rebuilds and sessions. " +
+                              "This puts them all back."
+            };
+            reset.Click += (s, e) => ResetManualLayout();
+            drop.DropDownItems.Add(reset);
             return drop;
         }
 
@@ -475,6 +494,12 @@ namespace DataverseErdVisualizer
                         return;
                     }
                     _model = (ErdModel)args.Result;
+
+                    // Each solution keeps its own arrangement; one solution's
+                    // positions mean nothing in another.
+                    _layoutKey = solution.UniqueName;
+                    _pinned = LayoutStore.Load(_layoutKey);
+
                     PopulateEntityList();
                     Rebuild();
                 }
@@ -579,13 +604,19 @@ namespace DataverseErdVisualizer
                 {
                     diagram = ErdGraphBuilder.Build(_model, _options, measure);
                 }
+                // Hand-placed tables go back where they were left; the layout
+                // engine has no memory of them across a rebuild.
+                PinnedLayout.Apply(diagram, _pinned);
+
                 _panel.SetDiagram(diagram);
                 _panel.ZoomToFit();
 
                 int tables = diagram.Graph.Nodes.Count;
                 int rels = diagram.Graph.Edges.Count;
+                int placed = diagram.Graph.Nodes.Count(n => n.Pinned);
                 _status.ForeColor = Color.DimGray;
-                _status.Text = tables + " tables · " + rels + " relationships";
+                _status.Text = tables + " tables · " + rels + " relationships" +
+                               (placed > 0 ? " · " + placed + " placed by hand" : "");
                 UpdateButtons();
             }
             catch (Exception ex)
@@ -597,6 +628,48 @@ namespace DataverseErdVisualizer
             {
                 Cursor = Cursors.Default;
             }
+        }
+
+        /// <summary>
+        /// A drag finished: remember where every hand-placed table now sits, so
+        /// the next rebuild and the next session can put them back.
+        /// </summary>
+        private void OnTableMoved()
+        {
+            var diagram = _panel.Diagram;
+            if (diagram == null) return;
+
+            foreach (var pin in PinnedLayout.Collect(diagram))
+                _pinned[pin.Key] = pin.Value;
+
+            LayoutStore.Save(_layoutKey, _pinned);
+
+            int placed = _pinned.Count;
+            _status.ForeColor = Color.DimGray;
+            _status.Text = diagram.Graph.Nodes.Count + " tables · " +
+                           diagram.Graph.Edges.Count + " relationships · " +
+                           placed + " placed by hand";
+        }
+
+        /// <summary>Throws away the manual arrangement and lays out afresh.</summary>
+        private void ResetManualLayout()
+        {
+            if (_pinned.Count == 0)
+            {
+                MessageBox.Show(this, "No tables have been placed by hand.", "Nothing to reset",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var message = $"Put all {_pinned.Count} hand-placed table(s) back where the layout " +
+                          "engine wants them?\n\nThis cannot be undone.";
+            if (MessageBox.Show(this, message, "Reset manual layout",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            _pinned.Clear();
+            LayoutStore.Delete(_layoutKey);
+            Rebuild();
         }
 
         private void UpdateButtons()

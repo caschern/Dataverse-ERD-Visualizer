@@ -27,6 +27,9 @@ namespace DataverseErdVisualizer.UI
         /// <summary>Raised when the user enters or leaves full-screen mode.</summary>
         public event Action<bool> FullScreenChanged;
 
+        /// <summary>Raised after a table has been dragged to a new position.</summary>
+        public event Action TableMoved;
+
         /// <summary>True while the pickers are hidden to give the diagram the full width.</summary>
         public bool IsFullScreen { get; private set; }
 
@@ -249,7 +252,11 @@ namespace DataverseErdVisualizer.UI
             {
                 _panned = false;
                 Cursor = Cursors.Default;
-                if (wasNodeDrag) Invalidate();
+                if (wasNodeDrag)
+                {
+                    Invalidate();
+                    TableMoved?.Invoke();
+                }
                 return; // it was a drag, not a click
             }
 
@@ -266,8 +273,10 @@ namespace DataverseErdVisualizer.UI
         /// </summary>
         private void MoveNode(ErdNode node, float dx, float dy)
         {
+            // Kept inside the canvas: a box dragged past the top-left corner
+            // would be unreachable once the drag ended.
             node.Bounds = new RectangleF(
-                _dragNodeStart.X + dx, _dragNodeStart.Y + dy,
+                Math.Max(0f, _dragNodeStart.X + dx), Math.Max(0f, _dragNodeStart.Y + dy),
                 node.Bounds.Width, node.Bounds.Height);
             node.Pinned = true;
 
