@@ -63,6 +63,12 @@ is identical and the headings still chunk correctly. The per-table folder can al
 synced to a SharePoint library and indexed from there, which gives you versioning and
 access control.
 
+The per-table export always writes into its own `<Solution>-knowledge-base` subfolder of
+the folder you pick, and warns about any Markdown files already there that it did not
+write. A knowledge base is uploaded as a folder, so anything sitting beside these files
+gets indexed with them — mixing two solutions' documentation into one upload will have
+the agent answer questions about one system using the other's model.
+
 ## Install (local)
 
 1. Build: `dotnet build DataverseErdVisualizer.csproj -c Release`
