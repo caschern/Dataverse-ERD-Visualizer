@@ -40,6 +40,8 @@ namespace DataverseErdVisualizer.Layout
 
             var forward = routable.Where(e => !e.IsBack).ToList();
             AssignRanks(graph, forward);
+            if (graph.WrapWideRanks) WrapWideRanks(graph, forward);
+            SnapAdjacentNodes(graph, forward);
 
             // Multi-rank edges are split into per-gap segments joined by virtual
             // waypoint nodes that reserve a clear channel through every rank.
@@ -81,12 +83,47 @@ namespace DataverseErdVisualizer.Layout
         /// <summary>
         /// Splits multi-rank forward edges into chains of adjacent-rank segments
         /// joined by virtual nodes; adjacent edges pass through unchanged.
+        ///
+        /// Chains leaving the same table are BUNDLED: they share one virtual
+        /// node per rank they pass through, so a table with thirty deep
+        /// descendants sends one trunk down through the ranks between and fans
+        /// out only where the targets are. Unbundled, each edge reserved its own
+        /// channel, and a rank crossed by many long edges grew wider from the
+        /// channels alone — which undid rank wrapping, the very thing that
+        /// makes edges long.
+        ///
+        /// A chain's first segment (leaving its own port on the source) and
+        /// last segment (entering its own port on the target) stay its own, so
+        /// ports and labels are unaffected; only the run in between is shared.
         /// </summary>
         private static List<ErdEdge> BuildLayoutEdges(ErdGraph graph, List<ErdEdge> forward,
             List<ErdNode> virtuals, List<Chain> chains)
         {
             var layout = new List<ErdEdge>();
+            var sharedVias = new Dictionary<string, ErdNode>(StringComparer.OrdinalIgnoreCase);
+            var sharedSegments = new Dictionary<string, ErdEdge>(StringComparer.OrdinalIgnoreCase);
             int counter = 0;
+
+            ErdEdge OwnSegment(string from, string to)
+            {
+                var seg = new ErdEdge { FromId = from, ToId = to };
+                layout.Add(seg);
+                return seg;
+            }
+
+            ErdEdge SharedSegment(string from, string to)
+            {
+                var key = from + "|" + to;
+                ErdEdge seg;
+                if (!sharedSegments.TryGetValue(key, out seg))
+                {
+                    seg = new ErdEdge { FromId = from, ToId = to };
+                    sharedSegments[key] = seg;
+                    layout.Add(seg);
+                }
+                return seg;
+            }
+
             foreach (var e in forward)
             {
                 var from = graph[e.FromId];
@@ -102,23 +139,27 @@ namespace DataverseErdVisualizer.Layout
                 string prev = e.FromId;
                 for (int r = from.Rank + 1; r < to.Rank; r++)
                 {
-                    var via = new ErdNode
+                    var key = e.FromId + "|" + r;
+                    ErdNode via;
+                    if (!sharedVias.TryGetValue(key, out via))
                     {
-                        Id = "__v" + counter++,
-                        Title = "",
-                        Rank = r,
-                        Bounds = new RectangleF(0f, 0f, VirtualWidth, 1f)
-                    };
-                    virtuals.Add(via);
+                        via = new ErdNode
+                        {
+                            Id = "__v" + counter++,
+                            Title = "",
+                            Rank = r,
+                            Bounds = new RectangleF(0f, 0f, VirtualWidth, 1f)
+                        };
+                        sharedVias[key] = via;
+                        virtuals.Add(via);
+                    }
                     chain.Vias.Add(via);
-                    var seg = new ErdEdge { FromId = prev, ToId = via.Id };
-                    chain.Segments.Add(seg);
-                    layout.Add(seg);
+                    chain.Segments.Add(prev == e.FromId
+                        ? OwnSegment(prev, via.Id)
+                        : SharedSegment(prev, via.Id));
                     prev = via.Id;
                 }
-                var lastSeg = new ErdEdge { FromId = prev, ToId = e.ToId };
-                chain.Segments.Add(lastSeg);
-                layout.Add(lastSeg);
+                chain.Segments.Add(OwnSegment(prev, e.ToId));
                 chains.Add(chain);
             }
             return layout;
@@ -255,6 +296,163 @@ namespace DataverseErdVisualizer.Layout
             }
         }
 
+        // ---------- rank width cap ----------
+
+        /// <summary>Width-to-height shape the cap aims the node area at.</summary>
+        private const float TargetAspect = 2.0f;
+
+        /// <summary>Ranks narrower than this are never wrapped (about seven tables).</summary>
+        private const float MinRankWidth = 1600f;
+
+        /// <summary>
+        /// Keeps any rank from growing into a ribbon by moving tables down into
+        /// the rank below until it fits the diagram's balanced width.
+        ///
+        /// Moving a table down only ever lengthens edges INTO it — parents
+        /// stay above children — and those longer edges are then routed by
+        /// the same virtual-node channels as any other multi-rank edge. That is
+        /// the reason for doing it here, in the layering, rather than folding a
+        /// finished rank into sub-rows: sub-rows would need a new kind of
+        /// routing to get past the rows in between.
+        ///
+        /// Tables whose move pushes nothing else down go first, then those with
+        /// the fewest parents (the fewest edges made longer).
+        /// </summary>
+        private static void WrapWideRanks(ErdGraph graph, List<ErdEdge> forward)
+        {
+            var nodes = graph.Nodes;
+            if (nodes.Count < 2) return;
+
+            float cap = RankWidthCap(graph);
+            var children = Neighbours(forward, byParent: true);
+            var parents = Neighbours(forward, byParent: false);
+
+            int budget = nodes.Count * nodes.Count + 16;   // termination guard
+            for (int r = 0; r <= nodes.Max(n => n.Rank) && budget > 0; r++)
+            {
+                while (budget-- > 0)
+                {
+                    var rank = nodes.Where(n => n.Rank == r).ToList();
+                    if (rank.Count < 2) break;
+
+                    float width = rank.Sum(n => n.Bounds.Width) + (rank.Count - 1) * ErdStyle.HorizontalGap;
+                    if (width <= cap) break;
+
+                    // Among equals, the alphabetically LAST table moves down
+                    // first, so the wrapped rows read in order from the top —
+                    // the same order satellite grids use.
+                    var victim = rank
+                        .Where(n => !n.KeepAdjacent)
+                        .OrderBy(n => Count(children, n.Id, c => graph[c]?.Rank == r + 1))
+                        .ThenBy(n => Count(parents, n.Id, p => true))
+                        .ThenByDescending(n => n.Title ?? n.Id, StringComparer.OrdinalIgnoreCase)
+                        .ThenByDescending(n => n.Id, StringComparer.OrdinalIgnoreCase)
+                        .FirstOrDefault();
+                    if (victim == null) break;
+
+                    MoveDown(graph, victim, children);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The widest a rank may be: the width that would lay the diagram's
+        /// total box area out at the target shape, but never so narrow that
+        /// small diagrams wrap, nor narrower than the widest single box.
+        /// </summary>
+        private static float RankWidthCap(ErdGraph graph)
+        {
+            double area = 0;
+            float widest = 0f;
+            foreach (var n in graph.Nodes)
+            {
+                area += (n.Bounds.Width + ErdStyle.HorizontalGap) *
+                        (double)(n.Bounds.Height + ErdStyle.VerticalGap);
+                if (n.Bounds.Width > widest) widest = n.Bounds.Width;
+            }
+
+            float balanced = (float)Math.Sqrt(area * TargetAspect);
+            return Math.Max(Math.Max(balanced, MinRankWidth), widest + ErdStyle.HorizontalGap);
+        }
+
+        /// <summary>Moves a table down one rank, pushing its descendants along as needed.</summary>
+        private static void MoveDown(ErdGraph graph, ErdNode node, Dictionary<string, List<string>> children)
+        {
+            node.Rank++;
+            var queue = new Queue<ErdNode>();
+            queue.Enqueue(node);
+            while (queue.Count > 0)
+            {
+                var parent = queue.Dequeue();
+                List<string> kids;
+                if (!children.TryGetValue(parent.Id, out kids)) continue;
+                foreach (var id in kids)
+                {
+                    var child = graph[id];
+                    if (child == null || child.Rank > parent.Rank) continue;
+                    child.Rank = parent.Rank + 1;
+                    queue.Enqueue(child);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Puts every <see cref="ErdNode.KeepAdjacent"/> node exactly one rank
+        /// from its neighbour. Needed with or without wrapping: a grid that
+        /// sits ABOVE its hub is a source, and longest-path layering puts
+        /// every source at the top however deep its hub is — leaving the
+        /// grid's bus to cut down through all the ranks in between.
+        /// </summary>
+        private static void SnapAdjacentNodes(ErdGraph graph, List<ErdEdge> forward)
+        {
+            if (!graph.Nodes.Any(n => n.KeepAdjacent)) return;
+
+            var children = Neighbours(forward, byParent: true);
+            var parents = Neighbours(forward, byParent: false);
+
+            foreach (var node in graph.Nodes)
+            {
+                if (!node.KeepAdjacent) continue;
+
+                List<string> ups, downs;
+                bool hasParents = parents.TryGetValue(node.Id, out ups) && ups.Count > 0;
+                bool hasChildren = children.TryGetValue(node.Id, out downs) && downs.Count > 0;
+
+                if (hasChildren && !hasParents)
+                {
+                    var nearest = downs.Select(id => graph[id]).Where(n => n != null)
+                        .Select(n => n.Rank).DefaultIfEmpty(1).Min();
+                    node.Rank = Math.Max(0, nearest - 1);
+                }
+                else if (hasParents && !hasChildren)
+                {
+                    var nearest = ups.Select(id => graph[id]).Where(n => n != null)
+                        .Select(n => n.Rank).DefaultIfEmpty(-1).Max();
+                    node.Rank = nearest + 1;
+                }
+            }
+        }
+
+        private static Dictionary<string, List<string>> Neighbours(List<ErdEdge> forward, bool byParent)
+        {
+            var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var e in forward)
+            {
+                var key = byParent ? e.FromId : e.ToId;
+                var other = byParent ? e.ToId : e.FromId;
+                List<string> list;
+                if (!map.TryGetValue(key, out list)) map[key] = list = new List<string>();
+                if (!list.Contains(other, StringComparer.OrdinalIgnoreCase)) list.Add(other);
+            }
+            return map;
+        }
+
+        private static int Count(Dictionary<string, List<string>> map, string id, Func<string, bool> predicate)
+        {
+            List<string> list;
+            return map.TryGetValue(id, out list) ? list.Count(predicate) : 0;
+        }
+
         // Lane geometry: distance between parallel horizontal runs, and the
         // minimum horizontal clearance for two runs to share a lane.
         private const float LaneSpacing = 10f;
@@ -383,16 +581,43 @@ namespace DataverseErdVisualizer.Layout
                 return other == null ? 0f : other.Bounds.X + other.Bounds.Width / 2f;
             }
 
+            var bundled = new Dictionary<ErdEdge, Chain>();
+            foreach (var chain in chains)
+                if (chain.Vias.Count > 0) bundled[chain.Original] = chain;
+
             foreach (var group in routable.GroupBy(e => e.FromId, StringComparer.OrdinalIgnoreCase))
             {
                 var node = graph[group.Key];
                 if (node == null) continue;
-                var ordered = group
-                    .OrderBy(e => OtherCenterX(e.ToId))
-                    .ThenBy(e => e.ParallelIndex)
-                    .ThenBy(e => e.Relationship?.SchemaName ?? "", StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-                SpreadPorts(node, ordered, graph.PortSpacing, (e, x) => e.FromPortX = x);
+
+                // Edges that share a trunk leave through ONE port. Given a port
+                // each, forty of them drew a solid comb of stubs under the box
+                // that merged into the trunk a few pixels further down.
+                var slots = new List<KeyValuePair<float, List<ErdEdge>>>();
+                List<ErdEdge> trunk = null;
+                foreach (var e in group
+                    .OrderBy(e => e.ParallelIndex)
+                    .ThenBy(e => e.Relationship?.SchemaName ?? "", StringComparer.OrdinalIgnoreCase))
+                {
+                    Chain chain;
+                    if (bundled.TryGetValue(e, out chain))
+                    {
+                        if (trunk == null)
+                        {
+                            trunk = new List<ErdEdge>();
+                            slots.Add(new KeyValuePair<float, List<ErdEdge>>(CenterX(chain.Vias[0]), trunk));
+                        }
+                        trunk.Add(e);
+                    }
+                    else
+                    {
+                        slots.Add(new KeyValuePair<float, List<ErdEdge>>(
+                            OtherCenterX(e.ToId), new List<ErdEdge> { e }));
+                    }
+                }
+
+                SpreadPorts(node, slots.OrderBy(s => s.Key).Select(s => s.Value).ToList(),
+                    graph.PortSpacing, (e, x) => e.FromPortX = x);
             }
 
             foreach (var group in routable.GroupBy(e => e.ToId, StringComparer.OrdinalIgnoreCase))
@@ -403,6 +628,7 @@ namespace DataverseErdVisualizer.Layout
                     .OrderBy(e => OtherCenterX(e.FromId))
                     .ThenBy(e => e.ParallelIndex)
                     .ThenBy(e => e.Relationship?.SchemaName ?? "", StringComparer.OrdinalIgnoreCase)
+                    .Select(e => new List<ErdEdge> { e })
                     .ToList();
                 SpreadPorts(node, ordered, graph.PortSpacing, (e, x) => e.ToPortX = x);
             }
@@ -417,21 +643,28 @@ namespace DataverseErdVisualizer.Layout
             }
         }
 
-        private static void SpreadPorts(ErdNode node, List<ErdEdge> edges, float portSpacing,
+        /// <summary>
+        /// Spreads port slots evenly across a box border. Every edge in a slot
+        /// gets that slot's X — one edge normally, a whole trunk for bundled ones.
+        /// </summary>
+        private static void SpreadPorts(ErdNode node, List<List<ErdEdge>> slots, float portSpacing,
             Action<ErdEdge, float> set)
         {
-            int n = edges.Count;
+            int n = slots.Count;
             float cx = node.Bounds.X + node.Bounds.Width / 2f;
             if (n == 1)
             {
-                set(edges[0], cx);
+                foreach (var e in slots[0]) set(e, cx);
                 return;
             }
 
             float usable = Math.Max(0f, node.Bounds.Width - 28f);
             float spacing = Math.Min(portSpacing, usable / (n - 1));
             for (int i = 0; i < n; i++)
-                set(edges[i], cx + (i - (n - 1) / 2f) * spacing);
+            {
+                float x = cx + (i - (n - 1) / 2f) * spacing;
+                foreach (var e in slots[i]) set(e, x);
+            }
         }
 
         /// <summary>
