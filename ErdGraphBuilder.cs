@@ -96,6 +96,61 @@ namespace DataverseErdVisualizer
             return new ErdDiagram { Graph = graph, CanvasSize = canvas };
         }
 
+        /// <summary>
+        /// The seed table plus every table within <paramref name="hops"/>
+        /// relationships of it — the set behind "show me what touches this".
+        ///
+        /// Uses the same relationship filters as the diagram itself, so
+        /// focusing with system relationships hidden does not drag in the
+        /// owner and currency tables that were deliberately filtered out.
+        /// </summary>
+        public static HashSet<string> Neighbourhood(ErdModel model, ErdOptions options,
+            string seed, int hops)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (model == null || string.IsNullOrEmpty(seed)) return result;
+
+            result.Add(seed);
+            if (hops <= 0) return result;
+            options = options ?? new ErdOptions();
+
+            var neighbours = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var rel in DedupeRelationships(model.Relationships))
+            {
+                if (rel.Kind == RelationshipKind.ManyToMany && !options.IncludeManyToMany) continue;
+                // A table is already in its own neighbourhood.
+                if (rel.IsSelfReferential) continue;
+                if (!options.IncludeSystemRelationships && IsSystemRelationship(rel)) continue;
+
+                Link(neighbours, rel.ReferencedEntity, rel.ReferencingEntity);
+                Link(neighbours, rel.ReferencingEntity, rel.ReferencedEntity);
+            }
+
+            var frontier = new List<string> { seed };
+            for (int hop = 0; hop < hops; hop++)
+            {
+                var next = new List<string>();
+                foreach (var id in frontier)
+                {
+                    List<string> linked;
+                    if (!neighbours.TryGetValue(id, out linked)) continue;
+                    foreach (var other in linked)
+                        if (result.Add(other)) next.Add(other);
+                }
+                if (next.Count == 0) break;
+                frontier = next;
+            }
+            return result;
+        }
+
+        private static void Link(Dictionary<string, List<string>> map, string from, string to)
+        {
+            if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to)) return;
+            List<string> list;
+            if (!map.TryGetValue(from, out list)) map[from] = list = new List<string>();
+            list.Add(to);
+        }
+
         /// <summary>Builds the unsized graph (exposed separately for tests).</summary>
         public static ErdGraph BuildGraph(ErdModel model, ErdOptions options)
         {

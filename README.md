@@ -23,6 +23,10 @@ and built on the same custom diagram engine (GDI+/SVG/PDF surfaces + Sugiyama la
   components, so "do not include subcomponents" tables only show their real columns.
 - **Interactive preview** — zoom (Ctrl+wheel), pan, click a table for a full details
   pane (all columns + relationships), drag boxes to reposition, find-by-name.
+- **Focus mode** — right-click a table and show just its neighbourhood: direct
+  relationships, or two hops out. The way to explore a model too big to read at once.
+  The toolbar shows a *Show all tables* button while focused, and ticking tables in the
+  list takes you back to your own selection.
 - **Your arrangement sticks** — dragged tables keep their position through rebuilds
   (toggling options, ticking tables) and across sessions, stored per solution. Clear it
   with *Options → Reset manual layout*.

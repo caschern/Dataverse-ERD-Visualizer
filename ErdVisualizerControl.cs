@@ -24,6 +24,7 @@ namespace DataverseErdVisualizer
         private ToolStripDropDownButton _optionsDrop;
         private ToolStripDropDownButton _exportDrop;
         private ToolStripButton _fitButton;
+        private ToolStripButton _clearFocusButton;
         private ToolStripTextBox _findBox;
         private ToolStripLabel _status;
 
@@ -47,6 +48,14 @@ namespace DataverseErdVisualizer
         /// </summary>
         private Dictionary<string, PointF> _pinned = new Dictionary<string, PointF>(StringComparer.OrdinalIgnoreCase);
         private string _layoutKey;
+
+        /// <summary>
+        /// While focused, the diagram shows one table's neighbourhood instead of
+        /// the ticked selection. A lens over the model, not a change to it.
+        /// </summary>
+        private string _focusTable;
+        private string _focusTitle;
+        private int _focusHops;
         private readonly ErdOptions _options = new ErdOptions();
         private readonly Timer _rebuildDebounce;
         private bool _suspendEntityEvents;
@@ -83,6 +92,16 @@ namespace DataverseErdVisualizer
             };
             _fitButton.Click += (s, e) => _panel.ZoomToFit();
 
+            // Only appears while focused: a visible way out of a filtered view,
+            // so nobody is left wondering where their other tables went.
+            _clearFocusButton = new ToolStripButton("Show all tables")
+            {
+                DisplayStyle = ToolStripItemDisplayStyle.Text,
+                Visible = false,
+                ToolTipText = "Leave focus mode and go back to the ticked tables"
+            };
+            _clearFocusButton.Click += (s, e) => ClearFocus();
+
             _findBox = new ToolStripTextBox { Width = 160, ToolTipText = "Find a table by name (Enter = next match)" };
             _findBox.TextBox.HandleCreated += (s, e) =>
                 SendMessage(_findBox.TextBox.Handle, EM_SETCUEBANNER, (IntPtr)1, "Find table…");
@@ -111,7 +130,7 @@ namespace DataverseErdVisualizer
                 _loadButton, new ToolStripSeparator(),
                 _columnsDrop, _optionsDrop, new ToolStripSeparator(),
                 _exportDrop, new ToolStripSeparator(),
-                _fitButton, _findBox, new ToolStripSeparator(),
+                _fitButton, _clearFocusButton, _findBox, new ToolStripSeparator(),
                 _status, closeButton
             });
 
@@ -143,6 +162,9 @@ namespace DataverseErdVisualizer
             _entityList.ItemCheck += (s, e) =>
             {
                 if (_suspendEntityEvents) return;
+                // Ticking tables is an explicit statement of scope, so it takes
+                // over from focus rather than being silently ignored by it.
+                ForgetFocus();
                 _rebuildDebounce.Stop();
                 _rebuildDebounce.Start();
             };
@@ -192,6 +214,7 @@ namespace DataverseErdVisualizer
             _details = new EntityDetailsPane();
             _panel.NodeSelected += n => _details.SetNode(n, _panel.Diagram?.Graph);
             _panel.TableMoved += OnTableMoved;
+            _panel.TableRightClicked += ShowTableMenu;
             _panel.FullScreenChanged += full => _outerSplit.Panel1Collapsed = full;
 
             _outerSplit = new SplitContainer
@@ -499,6 +522,7 @@ namespace DataverseErdVisualizer
                     // positions mean nothing in another.
                     _layoutKey = solution.UniqueName;
                     _pinned = LayoutStore.Load(_layoutKey);
+                    ForgetFocus();
 
                     PopulateEntityList();
                     Rebuild();
@@ -578,6 +602,7 @@ namespace DataverseErdVisualizer
 
             // "All"/"None" apply to the *visible* (filtered) rows only.
             CaptureChecklist();
+            ForgetFocus();
             Rebuild();
         }
 
@@ -588,11 +613,14 @@ namespace DataverseErdVisualizer
             if (_model == null) return;
 
             CaptureChecklist();
-            var selected = new HashSet<string>(
-                _checkedByName.Where(kv => kv.Value).Select(kv => kv.Key),
-                StringComparer.OrdinalIgnoreCase);
 
-            _options.SelectedEntities = selected;
+            // Focus overrides the ticked selection rather than editing it, so
+            // clearing focus returns to exactly the scope the user had chosen.
+            _options.SelectedEntities = _focusTable != null
+                ? ErdGraphBuilder.Neighbourhood(_model, _options, _focusTable, _focusHops)
+                : new HashSet<string>(
+                    _checkedByName.Where(kv => kv.Value).Select(kv => kv.Key),
+                    StringComparer.OrdinalIgnoreCase);
 
             try
             {
@@ -615,8 +643,13 @@ namespace DataverseErdVisualizer
                 int rels = diagram.Graph.Edges.Count;
                 int placed = diagram.Graph.Nodes.Count(n => n.Pinned);
                 _status.ForeColor = Color.DimGray;
-                _status.Text = tables + " tables · " + rels + " relationships" +
+                _status.Text = (_focusTable != null
+                                   ? "Focused on " + _focusTitle +
+                                     (_focusHops == 1 ? " (direct) · " : " (two hops) · ")
+                                   : "") +
+                               tables + " tables · " + rels + " relationships" +
                                (placed > 0 ? " · " + placed + " placed by hand" : "");
+                UpdateFocusButton();
                 UpdateButtons();
             }
             catch (Exception ex)
@@ -628,6 +661,67 @@ namespace DataverseErdVisualizer
             {
                 Cursor = Cursors.Default;
             }
+        }
+
+        // ------------------------------------------------------------- focus
+
+        /// <summary>
+        /// The right-click menu on a table: the entry point to focus mode,
+        /// which is how anyone explores a model too big to read at once.
+        /// </summary>
+        private void ShowTableMenu(ErdNode node, Point where)
+        {
+            if (node?.Entity == null) return;
+
+            var name = node.Title ?? node.Id;
+            var menu = new ContextMenuStrip();
+
+            var direct = new ToolStripMenuItem($"Focus on {name} — direct relationships");
+            direct.Click += (s, e) => FocusOn(node, 1);
+
+            var twoHops = new ToolStripMenuItem($"Focus on {name} — two hops");
+            twoHops.Click += (s, e) => FocusOn(node, 2);
+
+            var showAll = new ToolStripMenuItem("Show all tables") { Enabled = _focusTable != null };
+            showAll.Click += (s, e) => ClearFocus();
+
+            menu.Items.Add(direct);
+            menu.Items.Add(twoHops);
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(showAll);
+            menu.Closed += (s, e) => menu.Dispose();
+            menu.Show(_panel, where);
+        }
+
+        private void FocusOn(ErdNode node, int hops)
+        {
+            _focusTable = node.Id;
+            _focusTitle = node.Title ?? node.Id;
+            _focusHops = hops;
+            Rebuild();
+        }
+
+        private void ClearFocus()
+        {
+            if (_focusTable == null) return;
+            ForgetFocus();
+            Rebuild();
+        }
+
+        /// <summary>Drops focus without redrawing, for callers about to rebuild anyway.</summary>
+        private void ForgetFocus()
+        {
+            _focusTable = null;
+            _focusTitle = null;
+            _focusHops = 0;
+        }
+
+        private void UpdateFocusButton()
+        {
+            _clearFocusButton.Visible = _focusTable != null;
+            _clearFocusButton.Text = _focusTable != null
+                ? "Show all tables (focused on " + _focusTitle + ")"
+                : "Show all tables";
         }
 
         /// <summary>
