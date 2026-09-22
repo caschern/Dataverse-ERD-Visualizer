@@ -91,6 +91,22 @@ namespace DataverseErdVisualizer.Tests
                 });
             }
 
+            void AddChoice(EntityModel e, string logical, string display, string description,
+                params string[] labels)
+            {
+                var a = new AttributeModel
+                {
+                    LogicalName = logical,
+                    DisplayName = display,
+                    TypeLabel = "Choice",
+                    RequiredLevel = "ApplicationRequired",
+                    Description = description
+                };
+                for (int i = 0; i < labels.Length; i++)
+                    a.Options.Add(new OptionModel { Value = 100000000 + i, Label = labels[i] });
+                e.Attributes.Add(a);
+            }
+
             var account = Entity("account", "Account");
             account.Attributes.Add(new AttributeModel
             {
@@ -130,6 +146,33 @@ namespace DataverseErdVisualizer.Tests
             Rel("cc_contact_workorder", "contact", "cc_workorder", "cc_contactid", "Reported By");
             Rel("cc_pricelevel_workorder", "pricelevel", "cc_workorder", "cc_pricelistid", "Price List");
             Rel("cc_workorder_booking", "cc_workorder", "cc_booking", "cc_workorderid", "Work Order");
+
+            AddChoice(workorder, "cc_priority", "Priority",
+                "How quickly the work order must be attended to.", "Low", "Normal", "Urgent");
+            var status = new AttributeModel
+            {
+                LogicalName = "statuscode",
+                DisplayName = "Status Reason",
+                TypeLabel = "Status Reason"
+            };
+            status.Options.Add(new OptionModel { Value = 1, Label = "Scheduled", StateLabel = "Active" });
+            status.Options.Add(new OptionModel { Value = 2, Label = "Completed", StateLabel = "Inactive" });
+            workorder.Attributes.Add(status);
+
+            // A parental relationship and a referential one, so the exported
+            // knowledge base shows both cascade sentences.
+            model.Relationships.Single(r => r.SchemaName == "cc_workorder_booking").Cascade =
+                new CascadeModel
+                {
+                    Delete = "Cascade", Assign = "Cascade", Share = "Cascade",
+                    Unshare = "Cascade", Reparent = "Cascade"
+                };
+            model.Relationships.Single(r => r.SchemaName == "cc_contact_workorder").Cascade =
+                new CascadeModel
+                {
+                    Delete = "RemoveLink", Assign = "NoCascade", Share = "NoCascade",
+                    Unshare = "NoCascade", Reparent = "NoCascade"
+                };
 
             model.Relationships.Add(new RelationshipModel
             {

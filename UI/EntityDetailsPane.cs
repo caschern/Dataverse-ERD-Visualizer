@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using DataverseErdVisualizer.Exporters;
 using DataverseErdVisualizer.Models;
 
 namespace DataverseErdVisualizer.UI
@@ -49,7 +51,8 @@ namespace DataverseErdVisualizer.UI
                 FullRowSelect = true,
                 HeaderStyle = ColumnHeaderStyle.Nonclickable,
                 BorderStyle = BorderStyle.None,
-                ShowGroups = true
+                ShowGroups = true,
+                ShowItemToolTips = true
             };
             _list.Columns.Add("Name", 140);
             _list.Columns.Add("Detail", 150);
@@ -95,11 +98,12 @@ namespace DataverseErdVisualizer.UI
             _list.Groups.Add(colGroup);
             _list.Groups.Add(relGroup);
 
-            void Add(ListViewGroup group, string name, string detail)
+            ListViewItem Add(ListViewGroup group, string name, string detail)
             {
                 var item = new ListViewItem(name) { Group = group };
                 item.SubItems.Add(detail ?? "");
                 _list.Items.Add(item);
+                return item;
             }
 
             Add(infoGroup, "Schema name", entity.SchemaName ?? entity.LogicalName);
@@ -112,7 +116,20 @@ namespace DataverseErdVisualizer.UI
                 .ThenBy(a => a.DisplayName, StringComparer.OrdinalIgnoreCase))
             {
                 string marker = attr.IsPrimaryId ? "PK · " : attr.IsPrimaryName ? "Name · " : "";
-                Add(colGroup, attr.DisplayName ?? attr.LogicalName, marker + attr.TypeLabel);
+                var item = Add(colGroup, attr.DisplayName ?? attr.LogicalName, marker + attr.TypeLabel);
+
+                // The column's description and its allowed values are too long
+                // for the row, but they are exactly what someone clicks a table
+                // to find out — so they hang off the hover.
+                var tip = new List<string> { attr.LogicalName };
+                if (!string.IsNullOrEmpty(attr.Description)) tip.Add(attr.Description.Trim());
+                if (attr.Options.Count > 0)
+                    tip.Add(string.Join(Environment.NewLine,
+                        attr.Options.Take(20).Select(o => "  " + o.Label + " = " + o.Value)
+                            .Concat(attr.Options.Count > 20
+                                ? new[] { "  … and " + (attr.Options.Count - 20) + " more" }
+                                : Enumerable.Empty<string>())));
+                item.ToolTipText = string.Join(Environment.NewLine + Environment.NewLine, tip);
             }
 
             if (graph != null)
@@ -130,7 +147,17 @@ namespace DataverseErdVisualizer.UI
                         detail = "1:N → " + rel.ReferencingEntity + " (" + (rel.LookupDisplayName ?? rel.LookupAttribute) + ")";
                     else
                         detail = "N:1 → " + rel.ReferencedEntity + " (" + (rel.LookupDisplayName ?? rel.LookupAttribute) + ")";
-                    Add(relGroup, rel.SchemaName, detail);
+
+                    var relItem = Add(relGroup, rel.SchemaName, detail);
+
+                    bool nodeIsParent = string.Equals(edge.FromId, node.Id, StringComparison.OrdinalIgnoreCase);
+                    var parentName = nodeIsParent ? entity.LogicalName : rel.ReferencedEntity;
+                    var childName = nodeIsParent ? rel.ReferencingEntity : entity.LogicalName;
+                    var cascade = CascadeText.Describe(rel.Cascade, parentName, childName,
+                        rel.LookupDisplayName ?? rel.LookupAttribute);
+                    if (!string.IsNullOrEmpty(cascade))
+                        relItem.ToolTipText = CascadeText.Name(rel.Cascade) + Environment.NewLine +
+                                              Environment.NewLine + cascade;
                 }
             }
 

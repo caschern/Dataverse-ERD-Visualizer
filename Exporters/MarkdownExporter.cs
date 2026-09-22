@@ -274,6 +274,17 @@ namespace DataverseErdVisualizer.Exporters
                 var required = RequiredLabel(attr.RequiredLevel);
                 if (required.Length > 0) sb.Append(' ').Append(required).Append('.');
 
+                // The allowed values, with the stored numbers: flows, FetchXML
+                // and the Web API all address choices by number, so an agent
+                // that only knows the labels cannot write a working query.
+                if (attr.Options.Count > 0)
+                    sb.Append(" Allowed values: ").Append(OptionList(attr.Options)).Append('.');
+
+                // The maker's own words come last — free text, most useful and
+                // least predictable.
+                if (!string.IsNullOrEmpty(attr.Description))
+                    sb.Append(' ').Append(Esc(attr.Description.Trim()));
+
                 sb.AppendLine();
             }
             sb.AppendLine();
@@ -315,14 +326,16 @@ namespace DataverseErdVisualizer.Exporters
                     // This table is the referenced ("one") side.
                     lines.Add($"- **{name}** is referenced by **{otherName}** (`{otherId}`) through " +
                               $"{otherName}'s lookup column **{lookup}** (`{rel.LookupAttribute}`). " +
-                              $"One {name} record can have many {otherName} records. Relationship {schema}.");
+                              $"One {name} record can have many {otherName} records. Relationship {schema}." +
+                              Behaviour(rel, parent: name, child: otherName, lookup: lookup));
                 }
                 else
                 {
                     // This table is the referencing ("many") side.
                     lines.Add($"- **{name}** references **{otherName}** (`{otherId}`) through " +
                               $"{name}'s lookup column **{lookup}** (`{rel.LookupAttribute}`). " +
-                              $"Many {name} records can point to one {otherName} record. Relationship {schema}.");
+                              $"Many {name} records can point to one {otherName} record. Relationship {schema}." +
+                              Behaviour(rel, parent: otherName, child: name, lookup: lookup));
                 }
             }
 
@@ -339,6 +352,43 @@ namespace DataverseErdVisualizer.Exporters
                     sb.AppendLine(line);
             }
             sb.AppendLine();
+        }
+
+        /// <summary>
+        /// The cascade clause appended to a relationship line. Written on both
+        /// tables, because "what happens to the children when I delete this?"
+        /// and "can my record survive its parent?" are the same fact asked from
+        /// either end.
+        /// </summary>
+        private static string Behaviour(RelationshipModel rel, string parent, string child, string lookup)
+        {
+            var sentence = CascadeText.Describe(rel.Cascade, parent, child, lookup);
+            if (string.IsNullOrEmpty(sentence)) return "";
+
+            var behaviourName = CascadeText.Name(rel.Cascade);
+            return " Behaviour: " + behaviourName + ". " + sentence;
+        }
+
+        /// <summary>Longest list a single column is allowed to spell out.</summary>
+        private const int MaxOptionsListed = 100;
+
+        private static string OptionList(List<OptionModel> options)
+        {
+            var shown = options.Take(MaxOptionsListed).Select(o =>
+            {
+                var text = Esc(o.Label) + " = " + o.Value;
+                // A status reason is only selectable while the record is in one
+                // particular status; without that, the list reads as if any
+                // reason were valid at any time.
+                return string.IsNullOrEmpty(o.StateLabel)
+                    ? text
+                    : text + " (status " + Esc(o.StateLabel) + ")";
+            });
+
+            var list = string.Join("; ", shown);
+            if (options.Count > MaxOptionsListed)
+                list += "; and " + (options.Count - MaxOptionsListed) + " more";
+            return list;
         }
 
         private static string RequiredLabel(string level)

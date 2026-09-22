@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using DataverseErdVisualizer;
 using DataverseErdVisualizer.Exporters;
 using DataverseErdVisualizer.Models;
@@ -70,6 +71,28 @@ namespace DataverseErdVisualizer.Tests
             lookup.Targets.Add("contact");
             kase.Attributes.Add(lookup);
 
+            var priority = new AttributeModel
+            {
+                LogicalName = "cc_priority",
+                DisplayName = "Priority",
+                TypeLabel = "Choice",
+                RequiredLevel = "None",
+                Description = "How quickly the case must be heard."
+            };
+            priority.Options.Add(new OptionModel { Value = 100000000, Label = "Low" });
+            priority.Options.Add(new OptionModel { Value = 100000001, Label = "High" });
+            kase.Attributes.Add(priority);
+
+            var statusReason = new AttributeModel
+            {
+                LogicalName = "statuscode",
+                DisplayName = "Status Reason",
+                TypeLabel = "Status Reason"
+            };
+            statusReason.Options.Add(new OptionModel { Value = 1, Label = "In Progress", StateLabel = "Active" });
+            statusReason.Options.Add(new OptionModel { Value = 5, Label = "Resolved", StateLabel = "Inactive" });
+            kase.Attributes.Add(statusReason);
+
             model.Relationships.Add(new RelationshipModel
             {
                 SchemaName = "cc_contact_case",
@@ -77,7 +100,15 @@ namespace DataverseErdVisualizer.Tests
                 ReferencedEntity = "contact",
                 ReferencingEntity = "cc_case",
                 LookupAttribute = "cc_judgeid",
-                LookupDisplayName = "Assigned Judge"
+                LookupDisplayName = "Assigned Judge",
+                Cascade = new CascadeModel
+                {
+                    Delete = "RemoveLink",
+                    Assign = "NoCascade",
+                    Share = "NoCascade",
+                    Unshare = "NoCascade",
+                    Reparent = "NoCascade"
+                }
             });
 
             using (var bmp = new Bitmap(1, 1))
@@ -194,6 +225,48 @@ namespace DataverseErdVisualizer.Tests
             Assert.Contains("## Model overview", md);
             Assert.Contains("Tables documented: 2", md);
             Assert.Contains("All tables covered:", md);
+        }
+
+        [Fact]
+        public void Choice_columns_list_their_values_with_the_stored_numbers()
+        {
+            var md = MarkdownExporter.Generate(Build());
+
+            // Flows, FetchXML and the Web API address choices by number, so an
+            // agent given only the labels cannot write a working query.
+            Assert.Contains("Allowed values: Low = 100000000; High = 100000001.", md);
+        }
+
+        [Fact]
+        public void Status_reasons_say_which_status_they_belong_to()
+        {
+            var md = MarkdownExporter.Generate(Build());
+
+            Assert.Contains("In Progress = 1 (status Active)", md);
+            Assert.Contains("Resolved = 5 (status Inactive)", md);
+        }
+
+        [Fact]
+        public void Column_descriptions_are_included()
+        {
+            var md = MarkdownExporter.Generate(Build());
+
+            Assert.Contains("How quickly the case must be heard.", md);
+        }
+
+        [Fact]
+        public void Cascade_behaviour_is_stated_from_both_tables()
+        {
+            var md = MarkdownExporter.Generate(Build());
+
+            Assert.Contains("Behaviour: Referential.", md);
+
+            // Both sides describe the same fact, and both must name the parent
+            // and child the right way round.
+            var deleteSentence =
+                "Deleting Contact records clears the Assigned Judge lookup on related Case records, which are kept.";
+            Assert.Equal(2, Regex.Matches(md, Regex.Escape(deleteSentence)).Count);
+            Assert.DoesNotContain("Deleting Case records clears", md);
         }
 
         [Fact]

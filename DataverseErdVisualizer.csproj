@@ -22,7 +22,7 @@
     <Company>Cristian Casas</Company>
     <Authors>Cristian Casas</Authors>
     <Product>Dataverse ERD Visualizer</Product>
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <Description>Generate interactive Entity Relationship Diagrams from any Dataverse solution: tables, columns, lookups and N:N relationships with crow's-foot notation, exportable to PNG, SVG, PDF, HTML and Mermaid.</Description>
   </PropertyGroup>
 
@@ -30,6 +30,11 @@
     <!-- The test project lives in a subfolder; keep it out of this assembly. -->
     <Compile Remove="Tests\**" />
     <None Remove="Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Lets the tests drive the SDK-to-model mapping with real metadata objects. -->
+    <InternalsVisibleTo Include="DataverseErdVisualizer.Tests" />
   </ItemGroup>
 
   <ItemGroup>

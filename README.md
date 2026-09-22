@@ -46,7 +46,15 @@ Both share the same content rules:
   child would never surface when asking what references the parent;
 - columns as self-describing bullets, not a table: a chunk boundary inside a Markdown
   table strands rows from their header and the model has to guess what each cell meant;
-- the full column list regardless of the diagram's column display mode;
+- the full column list regardless of the diagram's column display mode, each with its
+  description and — for choice, status and yes/no columns — every allowed value with the
+  **number** it is stored as, since flows, FetchXML and the Web API address choices by
+  number and an agent given only the labels cannot write a working query;
+- status reasons noting which status they belong to, so "which reasons can an active case
+  have?" is answerable;
+- each relationship's cascade behaviour, named (Parental, Referential…) and spelled out
+  ("deleting Contact records clears the Assigned Judge lookup on related Case records,
+  which are kept");
 - an overview naming the model's hub tables, for orientation questions;
 - no diagram embedded — image geometry would swamp every chunk.
 

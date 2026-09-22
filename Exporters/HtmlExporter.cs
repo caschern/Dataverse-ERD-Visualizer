@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -68,7 +69,20 @@ namespace DataverseErdVisualizer.Exporters
                     string badge = attr.IsPrimaryId ? "<span class=\"badge pk\">PK</span>"
                                  : attr.IsPrimaryName ? "<span class=\"badge nm\">NAME</span>"
                                  : attr.IsLookup ? "<span class=\"badge fk\">FK</span>" : "";
-                    string detail = attr.Targets.Count > 0 ? "→ " + H(string.Join(", ", attr.Targets)) : "";
+                    var bits = new List<string>();
+                    if (attr.Targets.Count > 0) bits.Add("→ " + H(string.Join(", ", attr.Targets)));
+                    if (attr.Options.Count > 0)
+                    {
+                        var shown = attr.Options.Take(25).Select(o =>
+                            H(o.Label) + " = " + o.Value +
+                            (string.IsNullOrEmpty(o.StateLabel) ? "" : " (" + H(o.StateLabel) + ")"));
+                        var list = string.Join(" · ", shown);
+                        if (attr.Options.Count > 25) list += " · +" + (attr.Options.Count - 25) + " more";
+                        bits.Add(list);
+                    }
+                    if (!string.IsNullOrEmpty(attr.Description)) bits.Add(H(attr.Description.Trim()));
+                    string detail = string.Join("<br>", bits);
+
                     sb.Append("<tr><td>").Append(badge).Append(H(attr.DisplayName ?? attr.LogicalName))
                       .Append("</td><td class=\"muted\">").Append(H(attr.LogicalName))
                       .Append("</td><td>").Append(H(attr.TypeLabel))
@@ -83,7 +97,7 @@ namespace DataverseErdVisualizer.Exporters
                     .Select(e => e.Relationship).Where(r => r != null).ToList();
                 if (rels.Count > 0)
                 {
-                    sb.AppendLine("<table style=\"margin-top:8px\"><tr><th style=\"width:34%\">Relationship</th><th style=\"width:12%\">Type</th><th>Detail</th></tr>");
+                    sb.AppendLine("<table style=\"margin-top:8px\"><tr><th style=\"width:30%\">Relationship</th><th style=\"width:10%\">Type</th><th style=\"width:18%\">Behaviour</th><th>Detail</th></tr>");
                     foreach (var rel in rels)
                     {
                         string type = rel.Kind == RelationshipKind.ManyToMany ? "N:N"
@@ -93,6 +107,7 @@ namespace DataverseErdVisualizer.Exporters
                             : H(rel.ReferencingEntity + "." + (rel.LookupDisplayName ?? rel.LookupAttribute) + " → " + rel.ReferencedEntity);
                         sb.Append("<tr><td>").Append(H(rel.SchemaName))
                           .Append("</td><td>").Append(type)
+                          .Append("</td><td class=\"muted\">").Append(H(CascadeText.Name(rel.Cascade)))
                           .Append("</td><td class=\"muted\">").Append(detail)
                           .AppendLine("</td></tr>");
                     }
