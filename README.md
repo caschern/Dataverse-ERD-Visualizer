@@ -41,6 +41,8 @@ and built on the same custom diagram engine (GDI+/SVG/PDF surfaces + Sugiyama la
 - **Your arrangement sticks** — dragged tables keep their position through rebuilds
   (toggling options, ticking tables) and across sessions, stored per solution. Clear it
   with *Options → Reset manual layout*.
+- **So do your preferences** — the column mode and every toggle under *Options* are
+  remembered between sessions.
 - **Exports** — PNG, SVG (Visio/draw.io/Figma-editable), vector PDF, a self-contained
   HTML data dictionary, a Mermaid `erDiagram` for wikis and markdown, and a
   **Markdown knowledge base for AI agents**.
