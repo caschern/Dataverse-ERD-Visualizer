@@ -21,9 +21,7 @@ namespace DataverseErdVisualizer.Layout
     /// </summary>
     public static class LayoutStore
     {
-        private static string Folder => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "MscrmTools", "XrmToolBox", "Settings", "DataverseErdVisualizer", "layouts");
+        private static string Folder => Path.Combine(SettingsFolder.Root, "layouts");
 
         public static Dictionary<string, PointF> Load(string solutionKey)
         {

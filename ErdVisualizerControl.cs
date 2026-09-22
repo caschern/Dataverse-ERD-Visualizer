@@ -64,6 +64,9 @@ namespace DataverseErdVisualizer
         {
             _rebuildDebounce = new Timer { Interval = 300 };
             _rebuildDebounce.Tick += (s, e) => { _rebuildDebounce.Stop(); Rebuild(); };
+
+            // Before the menus are built: they take their ticks from _options.
+            OptionsStore.Load(_options);
             BuildUi();
         }
 
@@ -240,9 +243,14 @@ namespace DataverseErdVisualizer
             void AddMode(string text, AttributeDisplayMode mode)
             {
                 var item = new ToolStripMenuItem(text) { Checked = mode == _options.AttributeMode, Tag = mode };
+
+                // The caption follows the remembered mode, not a hardcoded default.
+                if (item.Checked) drop.Text = "Columns: " + text.Replace("&", "&&");
+
                 item.Click += (s, e) =>
                 {
                     _options.AttributeMode = mode;
+                    OptionsStore.Save(_options);
                     foreach (ToolStripMenuItem other in drop.DropDownItems)
                         other.Checked = Equals(other.Tag, mode);
                     drop.Text = "Columns: " + text.Replace("&", "&&");
@@ -268,7 +276,12 @@ namespace DataverseErdVisualizer
             ToolStripMenuItem Toggle(string text, bool initial, Action<bool> apply)
             {
                 var item = new ToolStripMenuItem(text) { Checked = initial, CheckOnClick = true };
-                item.CheckedChanged += (s, e) => { apply(item.Checked); Rebuild(); };
+                item.CheckedChanged += (s, e) =>
+                {
+                    apply(item.Checked);
+                    OptionsStore.Save(_options);
+                    Rebuild();
+                };
                 drop.DropDownItems.Add(item);
                 return item;
             }
