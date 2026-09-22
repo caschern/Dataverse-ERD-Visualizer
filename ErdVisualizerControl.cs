@@ -47,7 +47,7 @@ namespace DataverseErdVisualizer
         /// creates a new graph.
         /// </summary>
         private Dictionary<string, PointF> _pinned = new Dictionary<string, PointF>(StringComparer.OrdinalIgnoreCase);
-        private string _layoutKey;
+        private string _solutionKey;
 
         /// <summary>
         /// While focused, the diagram shows one table's neighbourhood instead of
@@ -56,6 +56,9 @@ namespace DataverseErdVisualizer
         private string _focusTable;
         private string _focusTitle;
         private int _focusHops;
+
+        /// <summary>One-shot prefix for the status bar after a solution loads.</summary>
+        private string _selectionNote;
         private readonly ErdOptions _options = new ErdOptions();
         private readonly Timer _rebuildDebounce;
         private bool _suspendEntityEvents;
@@ -537,8 +540,8 @@ namespace DataverseErdVisualizer
 
                     // Each solution keeps its own arrangement; one solution's
                     // positions mean nothing in another.
-                    _layoutKey = solution.UniqueName;
-                    _pinned = LayoutStore.Load(_layoutKey);
+                    _solutionKey = solution.UniqueName;
+                    _pinned = LayoutStore.Load(_solutionKey);
                     ForgetFocus();
 
                     PopulateEntityList();
@@ -556,15 +559,50 @@ namespace DataverseErdVisualizer
 
         private void PopulateEntityList()
         {
+            // Empty the list BEFORE anything reads it back. Otherwise the
+            // capture step inside FillEntityList harvests the PREVIOUS
+            // solution's checkboxes — handing any table the two solutions share
+            // its old tick, and writing the old solution's tables into this
+            // one's saved selection.
+            _suspendEntityEvents = true;
+            _entityList.Items.Clear();
+            _suspendEntityEvents = false;
+
+            // Last session's ticks where the table was known then; tables new
+            // to the solution get the usual default for its size.
+            bool newTableDefault = SolutionTables().Count() <= LargeSolutionThreshold;
+            var saved = SelectionStore.Load(_solutionKey);
+            var resolved = SelectionStore.Resolve(
+                SolutionTables().Select(e => e.LogicalName), saved, newTableDefault);
+
             _checkedByName.Clear();
-            bool checkAll = SolutionTables().Count() <= LargeSolutionThreshold;
-            foreach (var entity in SolutionTables())
-                _checkedByName[entity.LogicalName] = checkAll;
+            foreach (var tick in resolved) _checkedByName[tick.Key] = tick.Value;
+
             _entitySearch.Clear();
             FillEntityList();
 
-            if (!checkAll)
-                _status.Text = "Large solution — tick the tables to draw";
+            // Only worth saying when it changed something: a remembered
+            // selection that equals the defaults is indistinguishable from none.
+            _selectionNote = saved.Count > 0 && resolved.Any(t => t.Value != newTableDefault)
+                ? "Restored your table selection · "
+                : null;
+        }
+
+        /// <summary>
+        /// Remembers the current solution's ticks. Only its own tables are
+        /// written, so nothing from another solution can leak into the file.
+        /// </summary>
+        private void SaveSelection()
+        {
+            if (_model == null || string.IsNullOrEmpty(_solutionKey)) return;
+
+            var ticks = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var table in SolutionTables())
+            {
+                bool ticked;
+                ticks[table.LogicalName] = _checkedByName.TryGetValue(table.LogicalName, out ticked) && ticked;
+            }
+            SelectionStore.Save(_solutionKey, ticks);
         }
 
         private IEnumerable<EntityModel> SolutionTables()
@@ -630,6 +668,9 @@ namespace DataverseErdVisualizer
             if (_model == null) return;
 
             CaptureChecklist();
+            // Every checklist change funnels through here, so this is the one
+            // place the selection needs saving.
+            SaveSelection();
 
             // Focus overrides the ticked selection rather than editing it, so
             // clearing focus returns to exactly the scope the user had chosen.
@@ -660,12 +701,25 @@ namespace DataverseErdVisualizer
                 int rels = diagram.Graph.Edges.Count;
                 int placed = diagram.Graph.Nodes.Count(n => n.Pinned);
                 _status.ForeColor = Color.DimGray;
-                _status.Text = (_focusTable != null
-                                   ? "Focused on " + _focusTitle +
-                                     (_focusHops == 1 ? " (direct) · " : " (two hops) · ")
-                                   : "") +
-                               tables + " tables · " + rels + " relationships" +
-                               (placed > 0 ? " · " + placed + " placed by hand" : "");
+
+                if (tables == 0 && _focusTable == null)
+                {
+                    // Derived rather than set when the list is filled: anything
+                    // set there was overwritten by this very line before anyone
+                    // could read it.
+                    _status.Text = "No tables ticked — tick tables in the list to draw them";
+                }
+                else
+                {
+                    _status.Text = (_selectionNote ?? "") +
+                                   (_focusTable != null
+                                       ? "Focused on " + _focusTitle +
+                                         (_focusHops == 1 ? " (direct) · " : " (two hops) · ")
+                                       : "") +
+                                   tables + " tables · " + rels + " relationships" +
+                                   (placed > 0 ? " · " + placed + " placed by hand" : "");
+                }
+                _selectionNote = null;   // said once, on the first draw after loading
                 UpdateFocusButton();
                 UpdateButtons();
             }
@@ -753,7 +807,7 @@ namespace DataverseErdVisualizer
             foreach (var pin in PinnedLayout.Collect(diagram))
                 _pinned[pin.Key] = pin.Value;
 
-            LayoutStore.Save(_layoutKey, _pinned);
+            LayoutStore.Save(_solutionKey, _pinned);
 
             int placed = _pinned.Count;
             _status.ForeColor = Color.DimGray;
@@ -779,7 +833,7 @@ namespace DataverseErdVisualizer
                 return;
 
             _pinned.Clear();
-            LayoutStore.Delete(_layoutKey);
+            LayoutStore.Delete(_solutionKey);
             Rebuild();
         }
 
