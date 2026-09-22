@@ -311,6 +311,81 @@ namespace DataverseErdVisualizer.Tests
             AssertNoLabelSitsInsideABox(SvgExporter.Generate(diagram));
         }
 
+        /// <summary>
+        /// Two hubs sharing forty tables — width that satellite clustering
+        /// cannot remove — rendered through the whole pipeline, so wrapping,
+        /// bundled trunks and rotated labels are exercised together.
+        /// </summary>
+        private static ErdModel WideModel()
+        {
+            var model = new ErdModel
+            {
+                Solution = new SolutionInfo { FriendlyName = "Wide Sample", UniqueName = "widesample", Version = "1.0" }
+            };
+
+            EntityModel Entity(string logical, string display)
+            {
+                var e = new EntityModel
+                {
+                    LogicalName = logical, SchemaName = logical, DisplayName = display,
+                    PrimaryIdAttribute = logical + "id", IsCustom = true
+                };
+                e.Attributes.Add(new AttributeModel
+                {
+                    LogicalName = logical + "id", DisplayName = display + " Id",
+                    IsPrimaryId = true, TypeLabel = "GUID"
+                });
+                model.Entities.Add(e);
+                return e;
+            }
+
+            Entity("cc_matter", "Matter");
+            Entity("cc_person", "Person");
+            for (int i = 0; i < 40; i++)
+            {
+                var logical = "cc_record" + i.ToString("D2");
+                Entity(logical, "Record " + i.ToString("D2"));
+                foreach (var hub in new[] { "cc_matter", "cc_person" })
+                    model.Relationships.Add(new RelationshipModel
+                    {
+                        SchemaName = hub + "_" + logical,
+                        Kind = RelationshipKind.OneToMany,
+                        ReferencedEntity = hub,
+                        ReferencingEntity = logical,
+                        LookupAttribute = hub + "id",
+                        LookupDisplayName = hub == "cc_matter" ? "Matter" : "Person"
+                    });
+            }
+            return model;
+        }
+
+        [Fact]
+        public void Wide_model_wraps_and_keeps_labels_out_of_boxes()
+        {
+            ErdDiagram wrapped, unwrapped;
+            using (var bmp = new Bitmap(1, 1))
+            using (var g = Graphics.FromImage(bmp))
+            using (var measure = new GdiDiagramSurface(g))
+            {
+                wrapped = ErdGraphBuilder.Build(WideModel(), new ErdOptions(), measure);
+                unwrapped = ErdGraphBuilder.Build(WideModel(), new ErdOptions { WrapWideRanks = false }, measure);
+            }
+
+            Assert.True(wrapped.CanvasSize.Width < unwrapped.CanvasSize.Width / 2f,
+                $"wrapped {wrapped.CanvasSize} vs unwrapped {unwrapped.CanvasSize}");
+            AssertNoLabelSitsInsideABox(SvgExporter.Generate(wrapped));
+
+            var dir = Environment.GetEnvironmentVariable("ERD_SMOKE_DIR");
+            if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+            {
+                PngExporter.Save(wrapped, Path.Combine(dir, "wide-wrapped.png"), 1f);
+                PngExporter.Save(unwrapped, Path.Combine(dir, "wide-unwrapped.png"), 1f);
+                File.WriteAllText(Path.Combine(dir, "wide-sizes.txt"),
+                    $"wrapped {wrapped.CanvasSize.Width:0} x {wrapped.CanvasSize.Height:0}\n" +
+                    $"unwrapped {unwrapped.CanvasSize.Width:0} x {unwrapped.CanvasSize.Height:0}\n");
+            }
+        }
+
         [Fact]
         public void Renders_sample_model_through_all_exporters()
         {

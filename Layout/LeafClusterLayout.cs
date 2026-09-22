@@ -189,7 +189,8 @@ namespace DataverseErdVisualizer.Layout
                 Title = graph.Title,
                 Subtitle = graph.Subtitle,
                 ExtraRankGap = graph.ExtraRankGap,
-                PortSpacing = graph.PortSpacing
+                PortSpacing = graph.PortSpacing,
+                WrapWideRanks = graph.WrapWideRanks
             };
 
             // Node and edge instances are shared, so the layout writes its
@@ -205,7 +206,10 @@ namespace DataverseErdVisualizer.Layout
                 {
                     Id = "__cluster" + index++,
                     Title = "",
-                    Bounds = new RectangleF(0f, 0f, c.Size.Width, c.Size.Height)
+                    Bounds = new RectangleF(0f, 0f, c.Size.Width, c.Size.Height),
+                    // The bus route runs straight between hub and grid, so
+                    // nothing may be laid out between them.
+                    KeepAdjacent = true
                 };
                 reduced.AddNode(c.Placeholder);
                 reduced.AddEdge(new ErdEdge

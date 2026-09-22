@@ -49,6 +49,13 @@ namespace DataverseErdVisualizer
         /// </summary>
         public bool ShowAllSatelliteRelationships { get; set; }
 
+        /// <summary>
+        /// Keep any rank from outgrowing the diagram's balanced width by moving
+        /// tables down into the ranks below. On by default; complements
+        /// satellite clustering, which only helps tables tied to a single hub.
+        /// </summary>
+        public bool WrapWideRanks { get; set; } = true;
+
         /// <summary>Cap on attribute rows per box in "All" mode.</summary>
         public int MaxAttributesPerEntity { get; set; } = 40;
 
@@ -162,7 +169,8 @@ namespace DataverseErdVisualizer
                 // give the drops extra length and wider port pitch (a label
                 // column is ~16px wide) when labels are on.
                 ExtraRankGap = options.ShowEdgeLabels ? 56f : 0f,
-                PortSpacing = options.ShowEdgeLabels ? 18f : 14f
+                PortSpacing = options.ShowEdgeLabels ? 18f : 14f,
+                WrapWideRanks = options.WrapWideRanks
             };
 
             // --- entity boxes ---

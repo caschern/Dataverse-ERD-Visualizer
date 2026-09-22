@@ -284,6 +284,10 @@ namespace DataverseErdVisualizer
             allSatelliteEdges.ToolTipText =
                 "A satellite with several lookups to the same hub shows one connector marked " +
                 "\"x3\" by default. Tick this to draw each relationship separately.";
+
+            var wrap = Toggle("Wrap wide rows", _options.WrapWideRanks, v => _options.WrapWideRanks = v);
+            wrap.ToolTipText = "Stop any row of tables growing wider than the rest of the diagram " +
+                               "by moving some tables down a row.";
             drop.DropDownItems.Add(new ToolStripSeparator());
 
             Toggle("N:N relationships", _options.IncludeManyToMany, v => _options.IncludeManyToMany = v);

@@ -21,6 +21,17 @@ and built on the same custom diagram engine (GDI+/SVG/PDF surfaces + Sugiyama la
   (labeled with the intersect table), bottom-corner loops for self-referential lookups.
 - **Segmented solution aware** — honours `rootcomponentbehavior` and attribute
   components, so "do not include subcomponents" tables only show their real columns.
+- **Page-shaped, not ribbon-shaped** — two complementary defenses against diagrams
+  thousands of pixels wide:
+  - *Satellite grids*: tables whose every relationship points at one hub are packed
+    into an alphabetical grid beside it (a satellite with several lookups to the same
+    hub shows one connector marked `xN`).
+  - *Row wrapping*: any row still wider than the diagram's balanced width has tables
+    moved down into the rows below. Their longer connectors are bundled — edges
+    leaving the same table share one trunk through the rows in between and fan out
+    only where their targets are.
+
+  Both are on by default and can be switched off under *Options*.
 - **Interactive preview** — zoom (Ctrl+wheel), pan, click a table for a full details
   pane (all columns + relationships), drag boxes to reposition, find-by-name.
 - **Focus mode** — right-click a table and show just its neighbourhood: direct

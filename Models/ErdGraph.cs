@@ -65,6 +65,14 @@ namespace DataverseErdVisualizer.Models
 
         /// <summary>True when the user dragged this box; layout leaves it in place on refresh.</summary>
         public bool Pinned { get; set; }
+
+        /// <summary>
+        /// Must sit exactly one rank from its single neighbour and is never
+        /// moved away from it to narrow a rank. Set on satellite-grid
+        /// placeholders: the grid's bus route runs straight from the hub to the
+        /// grid and assumes no other boxes sit in between.
+        /// </summary>
+        public bool KeepAdjacent { get; set; }
     }
 
     /// <summary>A relationship line between two entity boxes.</summary>
@@ -150,6 +158,12 @@ namespace DataverseErdVisualizer.Models
         /// label's backing erases the next port's line.
         /// </summary>
         public float PortSpacing { get; set; } = 14f;
+
+        /// <summary>
+        /// Stop any rank growing wider than the diagram's balanced width by
+        /// moving tables down into the ranks below (set by the builder).
+        /// </summary>
+        public bool WrapWideRanks { get; set; }
 
         public List<ErdNode> Nodes { get; } = new List<ErdNode>();
         public List<ErdEdge> Edges { get; } = new List<ErdEdge>();
