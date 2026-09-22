@@ -30,6 +30,9 @@ namespace DataverseErdVisualizer.UI
         /// <summary>Raised after a table has been dragged to a new position.</summary>
         public event Action TableMoved;
 
+        /// <summary>Raised when a table is right-clicked, with the click point on this panel.</summary>
+        public event Action<ErdNode, Point> TableRightClicked;
+
         /// <summary>True while the pickers are hidden to give the diagram the full width.</summary>
         public bool IsFullScreen { get; private set; }
 
@@ -184,7 +187,23 @@ namespace DataverseErdVisualizer.UI
         {
             base.OnMouseDown(e);
             Focus();
-            if (e.Button != MouseButtons.Left || _diagram == null) return;
+            if (_diagram == null) return;
+
+            if (e.Button == MouseButtons.Right)
+            {
+                // Right-click selects the table under the cursor as well, so the
+                // details pane matches whatever the menu is about to act on.
+                var clicked = HitTest(e.Location);
+                if (clicked == null) return;
+
+                _selectedId = clicked.Id;
+                Invalidate();
+                NodeSelected?.Invoke(clicked);
+                TableRightClicked?.Invoke(clicked, e.Location);
+                return;
+            }
+
+            if (e.Button != MouseButtons.Left) return;
 
             _mouseDown = true;
             _panned = false;
