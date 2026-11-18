@@ -5,3 +5,4 @@ dist/
 *.nupkg
 .vs/
 .PLAN.md
+Tests/
